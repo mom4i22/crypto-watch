@@ -46,8 +46,8 @@ public class MarketsAdapter extends RecyclerView.Adapter<MarketsAdapter.VH> {
     @Override
     public void onBindViewHolder(@NonNull VH h, int pos) {
         AssetPairDto p = items.get(pos);
-        h.txtName.setText(p.display);
-        h.txtSub.setText(p.wsName);
+        h.txtName.setText(p.display());
+        h.txtSub.setText(p.wsName());
         h.btnAdd.setOnClickListener(v -> listener.onAddToFavorites(p));
         h.itemView.setOnClickListener(v -> listener.onOpenDetails(p));
     }

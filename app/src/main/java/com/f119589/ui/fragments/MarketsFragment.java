@@ -58,7 +58,7 @@ public class MarketsFragment extends Fragment implements MarketsAdapter.OnMarket
     @Override
     public void onAddToFavorites(AssetPairDto pair) {
         repo.addFavorite(pair);
-        repo.fetchAndCacheOhlc24h(pair.wsName);
+        repo.fetchAndCacheOhlc24h(pair.wsName());
 
         LocalBroadcastManager.getInstance(requireContext())
                 .sendBroadcast(new Intent(KrakenWebSocketService.ACTION_REFRESH_SUBSCRIPTIONS));
@@ -69,12 +69,12 @@ public class MarketsFragment extends Fragment implements MarketsAdapter.OnMarket
                     .sendBroadcast(new Intent(KrakenWebSocketService.ACTION_REFRESH_SUBSCRIPTIONS));
         }, 200);
 
-        repo.refreshTickerSnapshot(pair.wsName);
+        repo.refreshTickerSnapshot(pair.wsName());
     }
 
     @Override
     public void onOpenDetails(AssetPairDto pair) {
         // optional — Details are implemented in PairDetailActivity (Favorites also can open it)
-        PairDetailActivity.launch(requireContext(), pair.wsName, pair.display);
+        PairDetailActivity.launch(requireContext(), pair.wsName(), pair.display());
     }
 }

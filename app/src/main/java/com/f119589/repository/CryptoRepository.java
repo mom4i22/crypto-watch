@@ -119,8 +119,8 @@ public class CryptoRepository {
 
                 // Sort nicely (quote, then base)
                 list.sort(Comparator
-                        .comparing((AssetPairDto p) -> p.quote)
-                        .thenComparing(p -> p.base));
+                        .comparing(AssetPairDto::quote)
+                        .thenComparing(AssetPairDto::base));
 
                 marketsLive.postValue(list);
             } catch (Exception ex) {
@@ -146,7 +146,7 @@ public class CryptoRepository {
             FavouritePair e = favoriteDao.findOneSync(pair.dbSymbol());
             if (e == null) e = new FavouritePair();
             e.symbol = pair.dbSymbol();          // e.g., "XBT/USD"
-            e.displayName = pair.display;        // e.g., "BTC/USD" (if you choose to map XBT->BTC)
+            e.displayName = pair.display();        // e.g., "BTC/USD" (if you choose to map XBT->BTC)
             favoriteDao.upsert(e);
         });
     }
