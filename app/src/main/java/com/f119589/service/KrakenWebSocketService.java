@@ -17,15 +17,18 @@ import com.f119589.data.entity.FavouritePair;
 import com.f119589.repository.CryptoRepository;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 import okhttp3.OkHttpClient;
@@ -45,19 +48,20 @@ public class KrakenWebSocketService extends Service {
 
     private OkHttpClient client;
     private WebSocket socket;
-    private final ExecutorService io = Executors.newSingleThreadExecutor();
+    private final ScheduledExecutorService io = Executors.newSingleThreadScheduledExecutor();
 
     private final BroadcastReceiver refreshReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
             if (ACTION_REFRESH_SUBSCRIPTIONS.equals(intent.getAction())) {
-                io.submit(() -> refreshSubscriptions());
+                io.execute(() -> refreshSubscriptions());
             }
         }
     };
 
-    // Keep a copy of what we're currently subscribed to (to avoid duplicate subs).
-    private final Set<String> currentSubscribed = new HashSet<>();
+    private final Set<String> desiredSubscriptions = new HashSet<>();
+    private final Set<String> pendingSubscriptions = new HashSet<>();
+    private final Set<String> activeSubscriptions = new HashSet<>();
 
     // Reconnection control
     private boolean intentionalClose = false;
@@ -113,7 +117,7 @@ public class KrakenWebSocketService extends Service {
             public void onOpen(WebSocket webSocket, Response response) {
                 Log.i(TAG, "WebSocket opened");
                 reconnectAttempts = 0;
-                io.submit(() -> subscribeToFavorites(webSocket));
+                io.execute(() -> subscribeToFavorites(webSocket));
             }
 
             @Override
@@ -139,14 +143,10 @@ public class KrakenWebSocketService extends Service {
         if (intentionalClose) return;
         reconnectAttempts++;
         long delayMs = Math.min(30_000, 1_000L * (long) Math.pow(2, Math.min(5, reconnectAttempts)));
-        io.submit(() -> {
-            try {
-                Thread.sleep(delayMs);
-            } catch (InterruptedException ignored) {
-            }
+        io.schedule(() -> {
             Log.i(TAG, "Reconnecting...");
             connect();
-        });
+        }, delayMs, TimeUnit.MILLISECONDS);
     }
 
     private void subscribeToFavorites(WebSocket ws) {
@@ -163,11 +163,12 @@ public class KrakenWebSocketService extends Service {
                 Log.i(TAG, "No favorites; nothing to subscribe.");
                 return;
             }
-            String payload = buildSubscribePayload(pairs);
-            currentSubscribed.clear();
-            currentSubscribed.addAll(pairs);
-            ws.send(payload);
-            Log.i(TAG, "Subscribed to: " + pairs);
+            desiredSubscriptions.clear();
+            desiredSubscriptions.addAll(pairs);
+            pendingSubscriptions.clear();
+            activeSubscriptions.clear();
+
+            requestSubscriptions(ws, pairs);
         } catch (Exception ex) {
             Log.e(TAG, "subscribeToFavorites error", ex);
         }
@@ -187,21 +188,25 @@ public class KrakenWebSocketService extends Service {
                     .map(FavouritePair::getSymbol)
                     .collect(Collectors.toCollection(HashSet::new));
 
-            Set<String> toAdd = new HashSet<>(desired);
-            toAdd.removeAll(currentSubscribed);
+            desiredSubscriptions.clear();
+            desiredSubscriptions.addAll(desired);
 
-            Set<String> toRemove = new HashSet<>(currentSubscribed);
+            Set<String> toRemove = new HashSet<>(activeSubscriptions);
             toRemove.removeAll(desired);
 
             if (!toRemove.isEmpty()) {
                 socket.send(buildUnsubscribePayload(new ArrayList<>(toRemove)));
-                currentSubscribed.removeAll(toRemove);
+                activeSubscriptions.removeAll(toRemove);
+                pendingSubscriptions.removeAll(toRemove);
                 Log.i(TAG, "Unsubscribed: " + toRemove);
             }
+
+            Set<String> toAdd = new HashSet<>(desired);
+            toAdd.removeAll(activeSubscriptions);
+            toAdd.removeAll(pendingSubscriptions);
+
             if (!toAdd.isEmpty()) {
-                socket.send(buildSubscribePayload(toAdd));
-                currentSubscribed.addAll(toAdd);
-                Log.i(TAG, "Subscribed: " + toAdd);
+                requestSubscriptions(socket, toAdd);
             }
         } catch (Exception ex) {
             Log.e(TAG, "refreshSubscriptions error", ex);
@@ -222,9 +227,7 @@ public class KrakenWebSocketService extends Service {
                 if (evt.has("event")) {
                     String ev = evt.get("event").getAsString();
                     if ("subscriptionStatus".equals(ev)) {
-                        // Helpful to verify you actually subscribed to your pairs
-                        // e.g., evt: {"event":"subscriptionStatus","status":"subscribed","pair":"XBT/USD","subscription":{"name":"ticker"},...}
-                        android.util.Log.i(TAG, "WS subscriptionStatus: " + evt);
+                        io.execute(() -> handleSubscriptionStatus(evt));
                     } else if ("heartbeat".equals(ev)) {
                         // optional: ignore or very-verbose log
                         // android.util.Log.v(TAG, "WS heartbeat");
@@ -278,6 +281,42 @@ public class KrakenWebSocketService extends Service {
     // ---------------------------------------------------------------------
     // Payload builders
     // ---------------------------------------------------------------------
+
+    private void handleSubscriptionStatus(JsonObject evt) {
+        if (!evt.has("status") || !evt.has("pair")) return;
+        String status = evt.get("status").getAsString();
+        String pair = evt.get("pair").getAsString();
+
+        switch (status) {
+            case "subscribed":
+                pendingSubscriptions.remove(pair);
+                activeSubscriptions.add(pair);
+                Log.i(TAG, "Subscription confirmed: " + pair);
+                break;
+            case "unsubscribed":
+                pendingSubscriptions.remove(pair);
+                activeSubscriptions.remove(pair);
+                Log.i(TAG, "Unsubscribed confirmed: " + pair);
+                break;
+            case "error":
+                pendingSubscriptions.remove(pair);
+                activeSubscriptions.remove(pair);
+                Log.w(TAG, "Subscription error: " + evt);
+                if (desiredSubscriptions.contains(pair)) {
+                    io.schedule(() -> requestSubscriptions(socket, Collections.singleton(pair)), 2, TimeUnit.SECONDS);
+                }
+                break;
+            default:
+                break;
+        }
+    }
+
+    private void requestSubscriptions(WebSocket ws, Set<String> pairs) {
+        if (ws == null || pairs.isEmpty()) return;
+        ws.send(buildSubscribePayload(pairs));
+        pendingSubscriptions.addAll(pairs);
+        Log.i(TAG, "Subscribe request: " + pairs);
+    }
 
     private static String buildSubscribePayload(Set<String> pairs) {
         // {"event":"subscribe","pair":["XBT/USD","ETH/USD"],"subscription":{"name":"ticker"}}

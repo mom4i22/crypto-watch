@@ -1,6 +1,7 @@
 package com.f119589.repository;
 
 import android.content.Context;
+import android.content.Intent;
 import android.util.Log;
 
 import androidx.lifecycle.LiveData;
@@ -12,6 +13,7 @@ import com.f119589.data.db.FavouritePairDao;
 import com.f119589.data.entity.FavouritePair;
 import com.f119589.dto.AssetPairDto;
 import com.f119589.dto.TickEvent;
+import com.f119589.service.KrakenWebSocketService;
 import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
@@ -37,9 +39,11 @@ public class CryptoRepository {
 
     private static volatile CryptoRepository INSTANCE;
 
+    private final Context appCtx;
     private final KrakenClient api;
     private final FavouritePairDao favoriteDao;
-    private final ExecutorService io = Executors.newFixedThreadPool(4);
+    private final ExecutorService networkIo = Executors.newFixedThreadPool(4);
+    private final ExecutorService dbIo = Executors.newSingleThreadExecutor();
     private final Gson gson = new Gson();
 
     // Live markets list (from /AssetPairs)
@@ -52,6 +56,7 @@ public class CryptoRepository {
     private final Map<String, String> wsToAltMap = new ConcurrentHashMap<>();
 
     private CryptoRepository(Context appCtx) {
+        this.appCtx = appCtx;
         OkHttpClient ok = new OkHttpClient.Builder().build();
 
         Retrofit retrofit = new Retrofit.Builder()
@@ -88,7 +93,7 @@ public class CryptoRepository {
      * Pull /AssetPairs, parse into AssetPair list, publish to LiveData.
      */
     public void refreshAssetPairs() {
-        io.submit(() -> {
+        networkIo.submit(() -> {
             try {
                 Response<JsonObject> r = api.getAssetPairs().execute();
                 if (!r.isSuccessful() || r.body() == null) {
@@ -146,19 +151,25 @@ public class CryptoRepository {
      * Add/update a favorite (store symbol as wsName, and a friendly display).
      */
     public void addFavorite(AssetPairDto pair) {
-        io.submit(() -> {
+        dbIo.submit(() -> {
             FavouritePair e = favoriteDao.findOneSync(pair.dbSymbol());
-            if (e == null) e = new FavouritePair();
-            e.setSymbol(pair.dbSymbol());          // e.g., "XBT/USD"
+            if (e == null) {
+                e = new FavouritePair();
+                e.setSymbol(pair.dbSymbol());          // e.g., "XBT/USD"
+            }
             e.setDisplayName(pair.display());        // e.g., "BTC/USD" (if you choose to map XBT->BTC)
             favoriteDao.upsert(e);
+            notifyWsSubscriptionsChanged();
         });
     }
 
     public void removeFavorite(String wsSymbol) {
-        io.submit(() -> {
+        dbIo.submit(() -> {
             FavouritePair e = favoriteDao.findOneSync(wsSymbol);
-            if (e != null) favoriteDao.delete(e);
+            if (e != null) {
+                favoriteDao.delete(e);
+                notifyWsSubscriptionsChanged();
+            }
         });
     }
 
@@ -169,7 +180,7 @@ public class CryptoRepository {
      * compacts to [ [tsSec, close], ... ] JSON array, and stores to DB.
      */
     public void fetchAndCacheOhlc24h(String wsSymbol) {
-        io.submit(() -> {
+        networkIo.submit(() -> {
             try {
                 FavouritePair favourite = favoriteDao.findOneSync(wsSymbol);
                 if (favourite == null) {
@@ -177,13 +188,10 @@ public class CryptoRepository {
                     return;
                 }
 
-                String alt = wsToAltMap.get(wsSymbol);
+                String alt = resolveAltSymbol(wsSymbol);
                 if (alt == null) {
-                    // If markets not yet loaded, try a best-effort conversion: remove slash and trigger a refresh.
-                    alt = wsSymbol.replace("/", "");
-                    if (wsToAltMap.isEmpty()) {
-                        refreshAssetPairs();
-                    }
+                    Log.w(TAG, "fetchAndCacheOhlc24h: missing alt name for " + wsSymbol);
+                    return;
                 }
 
                 // 5-min bars over ~24h => ~288 points; use 'since' = now - 24h
@@ -225,7 +233,7 @@ public class CryptoRepository {
      * Update last price & timestamp (called from WebSocket Service later).
      */
     public void updateLivePrice(String wsSymbol, double price) {
-        io.submit(() -> {
+        dbIo.submit(() -> {
             try {
                 favoriteDao.updatePrice(wsSymbol, price, System.currentTimeMillis());
             } catch (Exception ex) {
@@ -254,9 +262,13 @@ public class CryptoRepository {
      * Quickly fetch a one-shot ticker snapshot (useful before WS connects).
      */
     public void refreshTickerSnapshot(String wsSymbol) {
-        io.submit(() -> {
+        networkIo.submit(() -> {
             try {
-                String alt = wsToAltMap.getOrDefault(wsSymbol, wsSymbol.replace("/", ""));
+                String alt = resolveAltSymbol(wsSymbol);
+                if (alt == null) {
+                    Log.w(TAG, "refreshTickerSnapshot: missing alt name for " + wsSymbol);
+                    return;
+                }
                 Response<JsonObject> r = api.getTicker(alt).execute();
                 if (!r.isSuccessful() || r.body() == null) return;
 
@@ -311,5 +323,39 @@ public class CryptoRepository {
         if (a.equalsIgnoreCase("XETH")) return "ETH";
         // Add more aliases if you wish; by default return original.
         return a.toUpperCase(Locale.US);
+    }
+
+    private String resolveAltSymbol(String wsSymbol) {
+        if (wsSymbol == null) return null;
+        String alt = wsToAltMap.get(wsSymbol);
+        if (alt != null) return alt;
+
+        try {
+            Response<JsonObject> response = api.getAssetPairs().execute();
+            if (!response.isSuccessful() || response.body() == null) return null;
+            JsonObject result = response.body().getAsJsonObject("result");
+            if (result == null) return null;
+
+            for (Map.Entry<String, JsonElement> e : result.entrySet()) {
+                JsonObject obj = e.getValue().getAsJsonObject();
+                String altName = optString(obj, "altname", null);
+                String wsName = optString(obj, "wsname", null);
+                if (altName == null || wsName == null) continue;
+                wsToAltMap.put(wsName, altName);
+                if (wsSymbol.equals(wsName)) {
+                    alt = altName;
+                }
+            }
+            return alt;
+        } catch (Exception ex) {
+            Log.w(TAG, "resolveAltSymbol error for " + wsSymbol, ex);
+            return null;
+        }
+    }
+
+    private void notifyWsSubscriptionsChanged() {
+        Intent intent = new Intent(KrakenWebSocketService.ACTION_REFRESH_SUBSCRIPTIONS);
+        intent.setPackage(appCtx.getPackageName());
+        appCtx.sendBroadcast(intent);
     }
 }

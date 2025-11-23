@@ -1,8 +1,6 @@
 package com.f119589.ui.fragments;
 
-import android.content.Intent;
 import android.os.Bundle;
-import android.os.Handler;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -19,7 +17,6 @@ import androidx.recyclerview.widget.RecyclerView;
 import com.f119589.R;
 import com.f119589.dto.AssetPairDto;
 import com.f119589.repository.CryptoRepository;
-import com.f119589.service.KrakenWebSocketService;
 import com.f119589.ui.PairDetailActivity;
 import com.f119589.ui.adapters.MarketsAdapter;
 
@@ -80,18 +77,6 @@ public class MarketsFragment extends Fragment implements MarketsAdapter.OnMarket
     @Override
     public void onAddToFavorites(AssetPairDto pair) {
         repo.addFavorite(pair);
-
-        Intent intent = new Intent(KrakenWebSocketService.ACTION_REFRESH_SUBSCRIPTIONS);
-        intent.setPackage(requireContext().getPackageName());
-        requireContext().sendBroadcast(intent);
-        // Cache sparkline data early (optional; also can be done in FavoritesFragment)
-
-        new Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
-            Intent delayedIntent = new Intent(KrakenWebSocketService.ACTION_REFRESH_SUBSCRIPTIONS);
-            delayedIntent.setPackage(requireContext().getPackageName());
-            requireContext().sendBroadcast(delayedIntent);
-        }, 200);
-
         repo.refreshTickerSnapshot(pair.wsName());
     }
 

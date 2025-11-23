@@ -1,6 +1,5 @@
 package com.f119589.ui.fragments;
 
-import android.content.Intent;
 import android.os.Bundle;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -18,7 +17,6 @@ import com.f119589.R;
 import com.f119589.data.entity.FavouritePair;
 import com.f119589.dto.TickEvent;
 import com.f119589.repository.CryptoRepository;
-import com.f119589.service.KrakenWebSocketService;
 import com.f119589.ui.PairDetailActivity;
 import com.f119589.ui.adapters.FavouritesAdapter;
 
@@ -94,9 +92,5 @@ public class FavouritesFragment extends Fragment implements FavouritesAdapter.On
     @Override
     public void onRemove(FavouritePair e) {
         repo.removeFavorite(e.getSymbol());
-        // Ask WS to refresh subscriptions
-        Intent intent = new Intent(KrakenWebSocketService.ACTION_REFRESH_SUBSCRIPTIONS);
-        intent.setPackage(requireContext().getPackageName());
-        requireContext().sendBroadcast(intent);
     }
 }
