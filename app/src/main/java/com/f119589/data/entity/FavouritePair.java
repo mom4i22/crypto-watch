@@ -5,6 +5,10 @@ import androidx.room.Entity;
 import androidx.room.Index;
 import androidx.room.PrimaryKey;
 
+import lombok.AllArgsConstructor;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
 @Entity(
         tableName = "favorites",
         indices = {
@@ -12,35 +16,23 @@ import androidx.room.PrimaryKey;
                 @Index(value = {"lastUpdated"})
         }
 )
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
 public class FavouritePair {
 
     @PrimaryKey
     @NonNull
-    public String symbol;        // Kraken-style pair for WS subscription, e.g., "XBT/USD"
+    private String symbol;        // Kraken-style pair for WS subscription, e.g., "XBT/USD"
 
-    public String displayName;   // UI-friendly, e.g., "BTC/USD" (optional mapping)
+    private String displayName;   // UI-friendly, e.g., "BTC/USD" (optional mapping)
 
-    public double lastPrice;     // latest known price from WS/REST
+    private double lastPrice;     // latest known price from WS/REST
 
-    public long lastUpdated;     // epoch millis of lastPrice update
+    private long lastUpdated;     // epoch millis of lastPrice update
 
     /**
      * Cached 24h OHLC data for the sparkline, stored as a compact JSON string.
      */
-    public String ohlc24hJson;
-
-    public FavouritePair(@NonNull String symbol,
-                         String displayName,
-                         double lastPrice,
-                         long lastUpdated,
-                         String ohlc24hJson) {
-        this.symbol = symbol;
-        this.displayName = displayName;
-        this.lastPrice = lastPrice;
-        this.lastUpdated = lastUpdated;
-        this.ohlc24hJson = ohlc24hJson;
-    }
-
-    public FavouritePair() {
-    }
+    private String ohlc24hJson;
 }

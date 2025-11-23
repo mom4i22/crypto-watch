@@ -22,9 +22,11 @@ import com.google.gson.JsonParser;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.stream.Collectors;
 
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
@@ -154,10 +156,13 @@ public class KrakenWebSocketService extends Service {
     private void subscribeToFavorites(WebSocket ws) {
         try {
             List<FavouritePair> favs = AppDb.get(this).favoritePairDao().getAllSync();
-            List<String> pairs = new ArrayList<>();
-            for (FavouritePair e : favs) {
-                if (!e.symbol.isEmpty()) pairs.add(e.symbol);
-            }
+
+            Set<String> pairs = favs.stream()
+                    .filter(Objects::nonNull)
+                    .map(FavouritePair::getSymbol)
+                    .filter(symbol -> !symbol.isEmpty())
+                    .collect(Collectors.toCollection(HashSet::new));
+
             if (pairs.isEmpty()) {
                 Log.i(TAG, "No favorites; nothing to subscribe.");
                 return;
@@ -181,8 +186,10 @@ public class KrakenWebSocketService extends Service {
             List<FavouritePair> favs = AppDb.get(this).favoritePairDao().getAllSync();
 
             // Determine additions/removals
-            Set<String> desired = new HashSet<>();
-            for (FavouritePair e : favs) desired.add(e.symbol);
+            Set<String> desired = favs.stream()
+                    .filter(Objects::nonNull)
+                    .map(FavouritePair::getSymbol)
+                    .collect(Collectors.toCollection(HashSet::new));
 
             Set<String> toAdd = new HashSet<>(desired);
             toAdd.removeAll(currentSubscribed);
@@ -196,7 +203,7 @@ public class KrakenWebSocketService extends Service {
                 Log.i(TAG, "Unsubscribed: " + toRemove);
             }
             if (!toAdd.isEmpty()) {
-                socket.send(buildSubscribePayload(new ArrayList<>(toAdd)));
+                socket.send(buildSubscribePayload(toAdd));
                 currentSubscribed.addAll(toAdd);
                 Log.i(TAG, "Subscribed: " + toAdd);
             }
@@ -279,12 +286,12 @@ public class KrakenWebSocketService extends Service {
     // Payload builders
     // ---------------------------------------------------------------------
 
-    private static String buildSubscribePayload(List<String> pairs) {
+    private static String buildSubscribePayload(Set<String> pairs) {
         // {"event":"subscribe","pair":["XBT/USD","ETH/USD"],"subscription":{"name":"ticker"}}
         JsonArray pairArr = new JsonArray();
         for (String p : pairs) pairArr.add(p);
 
-        return "{\"event\":\"subscribe\",\"pair\":" + pairArr.toString() +
+        return "{\"event\":\"subscribe\",\"pair\":" + pairArr +
                 ",\"subscription\":{\"name\":\"ticker\"}}";
     }
 
@@ -292,7 +299,7 @@ public class KrakenWebSocketService extends Service {
         JsonArray pairArr = new JsonArray();
         for (String p : pairs) pairArr.add(p);
 
-        return "{\"event\":\"unsubscribe\",\"pair\":" + pairArr.toString() +
+        return "{\"event\":\"unsubscribe\",\"pair\":" + pairArr +
                 ",\"subscription\":{\"name\":\"ticker\"}}";
     }
 }

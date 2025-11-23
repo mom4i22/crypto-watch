@@ -44,8 +44,8 @@ public class FavouritesAdapter extends RecyclerView.Adapter<FavouritesAdapter.VH
     public void pushLiveTick(String wsSymbol, double price) {
         for (int i = 0; i < items.size(); i++) {
             FavouritePair e = items.get(i);
-            if (e.symbol.equals(wsSymbol)) {
-                e.lastPrice = price;
+            if (e.getSymbol().equals(wsSymbol)) {
+                e.setLastPrice(price);
                 notifyItemChanged(i, "price_only");
                 break;
             }
@@ -63,11 +63,11 @@ public class FavouritesAdapter extends RecyclerView.Adapter<FavouritesAdapter.VH
     @Override
     public void onBindViewHolder(@NonNull VH h, int pos) {
         FavouritePair e = items.get(pos);
-        h.txtName.setText(e.displayName != null ? e.displayName : e.symbol);
-        h.txtSub.setText(e.symbol);
-        h.txtPrice.setText(e.lastPrice > 0 ? String.valueOf(e.lastPrice) : "—");
+        h.txtName.setText(e.getDisplayName() != null ? e.getDisplayName() : e.getSymbol());
+        h.txtSub.setText(e.getSymbol());
+        h.txtPrice.setText(e.getLastPrice() > 0 ? String.valueOf(e.getLastPrice()) : "—");
 
-        SparklineBinder.bind(h.chart, e.ohlc24hJson);
+        SparklineBinder.bind(h.chart, e.getOhlc24hJson());
 
         h.btnRemove.setOnClickListener(v -> listener.onRemove(e));
         h.itemView.setOnClickListener(v -> listener.onOpenDetails(e));
@@ -77,7 +77,7 @@ public class FavouritesAdapter extends RecyclerView.Adapter<FavouritesAdapter.VH
     public void onBindViewHolder(@NonNull VH h, int pos, @NonNull List<Object> payloads) {
         if (!payloads.isEmpty() && payloads.contains("price_only")) {
             FavouritePair e = items.get(pos);
-            h.txtPrice.setText(e.lastPrice > 0 ? String.valueOf(e.lastPrice) : "—");
+            h.txtPrice.setText(e.getLastPrice() > 0 ? String.valueOf(e.getLastPrice()) : "—");
             return; // skip full bind
         }
         super.onBindViewHolder(h, pos, payloads);
@@ -89,9 +89,11 @@ public class FavouritesAdapter extends RecyclerView.Adapter<FavouritesAdapter.VH
     }
 
     static class VH extends RecyclerView.ViewHolder {
-        TextView txtName, txtSub, txtPrice;
-        LineChart chart;
-        ImageButton btnRemove;
+        private final TextView txtName;
+        private final TextView txtSub;
+        private final TextView txtPrice;
+        private final LineChart chart;
+        private final ImageButton btnRemove;
 
         VH(@NonNull View v) {
             super(v);

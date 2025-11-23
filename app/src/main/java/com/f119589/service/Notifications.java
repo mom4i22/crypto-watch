@@ -13,7 +13,11 @@ import androidx.core.app.NotificationCompat;
 import com.f119589.R;
 import com.f119589.ui.MainActivity;
 
-public class Notifications {
+public final class Notifications {
+
+    private Notifications() {
+        // Utility class - prevent instantiation
+    }
 
     public static final String CHANNEL_ID = "price_ws_channel";
     public static final int NOTIF_ID_FOREGROUND = 1001;

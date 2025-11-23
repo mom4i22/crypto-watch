@@ -58,8 +58,9 @@ public class MarketsAdapter extends RecyclerView.Adapter<MarketsAdapter.VH> {
     }
 
     static class VH extends RecyclerView.ViewHolder {
-        TextView txtName, txtSub;
-        ImageButton btnAdd;
+        private final TextView txtName;
+        private final TextView txtSub;
+        private final ImageButton btnAdd;
 
         VH(@NonNull View v) {
             super(v);

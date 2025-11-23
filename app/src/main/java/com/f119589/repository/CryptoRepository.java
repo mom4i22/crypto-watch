@@ -145,8 +145,8 @@ public class CryptoRepository {
         io.submit(() -> {
             FavouritePair e = favoriteDao.findOneSync(pair.dbSymbol());
             if (e == null) e = new FavouritePair();
-            e.symbol = pair.dbSymbol();          // e.g., "XBT/USD"
-            e.displayName = pair.display();        // e.g., "BTC/USD" (if you choose to map XBT->BTC)
+            e.setSymbol(pair.dbSymbol());          // e.g., "XBT/USD"
+            e.setDisplayName(pair.display());        // e.g., "BTC/USD" (if you choose to map XBT->BTC)
             favoriteDao.upsert(e);
         });
     }
@@ -203,11 +203,11 @@ public class CryptoRepository {
 
                 FavouritePair e = favoriteDao.findOneSync(wsSymbol);
                 if (e == null) {
-                    // If user hasn’t favorited yet, create a minimal entry so sparkline can render after they do.
+                    // If user hasn't favorited yet, create a minimal entry so sparkline can render after they do.
                     e = new FavouritePair();
-                    e.symbol = wsSymbol;
+                    e.setSymbol(wsSymbol);
                 }
-                e.ohlc24hJson = json;
+                e.setOhlc24hJson(json);
                 favoriteDao.upsert(e);
 
             } catch (Exception ex) {

@@ -14,7 +14,11 @@ import java.util.List;
  * Parses a compact JSON string like: [[tsSec, close], [tsSec, close], ...]
  * into MPAndroidChart Entry list. Uses the INDEX as X for simplicity.
  */
-public class SparklineParser {
+public final class SparklineParser {
+
+    private SparklineParser() {
+        // Utility class - prevent instantiation
+    }
 
     private static final String TAG = "SparklineParser";
 

@@ -33,7 +33,6 @@ public class FavouritesFragment extends Fragment implements FavouritesAdapter.On
 
     private CryptoRepository repo;
     private FavouritesAdapter adapter;
-    private LiveData<List<FavouritePair>> live;
 
     private final Set<String> sparklineRequested = new HashSet<>();
 
@@ -67,15 +66,15 @@ public class FavouritesFragment extends Fragment implements FavouritesAdapter.On
         adapter = new FavouritesAdapter(this);
         rv.setAdapter(adapter);
 
-        live = repo.favorites();
+        LiveData<List<FavouritePair>> live = repo.favorites();
         live.observe(getViewLifecycleOwner(), (List<FavouritePair> list) -> {
             // 1) Update UI
             adapter.submit(list);
 
             for (FavouritePair e : list) {
-                if (e.ohlc24hJson == null || e.ohlc24hJson.isEmpty()) {
-                    if (sparklineRequested.add(e.symbol)) { // returns true if newly added
-                        CryptoRepository.get(requireContext()).fetchAndCacheOhlc24h(e.symbol);
+                if (e.getOhlc24hJson() == null || e.getOhlc24hJson().isEmpty()) {
+                    if (sparklineRequested.add(e.getSymbol())) { // returns true if newly added
+                        CryptoRepository.get(requireContext()).fetchAndCacheOhlc24h(e.getSymbol());
                     }
                 }
             }
@@ -97,12 +96,12 @@ public class FavouritesFragment extends Fragment implements FavouritesAdapter.On
 
     @Override
     public void onOpenDetails(FavouritePair e) {
-        PairDetailActivity.launch(requireContext(), e.symbol, e.displayName != null ? e.displayName : e.symbol);
+        PairDetailActivity.launch(requireContext(), e.getSymbol(), e.getDisplayName() != null ? e.getDisplayName() : e.getSymbol());
     }
 
     @Override
     public void onRemove(FavouritePair e) {
-        repo.removeFavorite(e.symbol);
+        repo.removeFavorite(e.getSymbol());
         // Ask WS to refresh subscriptions
         LocalBroadcastManager.getInstance(requireContext())
                 .sendBroadcast(new Intent(KrakenWebSocketService.ACTION_REFRESH_SUBSCRIPTIONS));

@@ -17,7 +17,11 @@ import java.util.List;
 /**
  * Configures a LineChart to look like a minimalist sparkline and binds data.
  */
-public class SparklineBinder {
+public final class SparklineBinder {
+
+    private SparklineBinder() {
+        // Utility class - prevent instantiation
+    }
 
     public static void bind(LineChart chart, String compactJson) {
         // Parse entries
