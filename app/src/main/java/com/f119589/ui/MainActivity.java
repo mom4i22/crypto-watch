@@ -41,7 +41,8 @@ public class MainActivity extends AppCompatActivity {
 
         TabLayout tabs = findViewById(R.id.tabs);
         new TabLayoutMediator(tabs, pager, (tab, pos) ->
-                tab.setText(pos == 0 ? "Markets" : "Favorites")
+                tab.setText(pos == 0 ? getString(R.string.markets_tab)
+                        : getString(R.string.favorites_tab))
         ).attach();
 
         // Ensure foreground WS service is running for live prices

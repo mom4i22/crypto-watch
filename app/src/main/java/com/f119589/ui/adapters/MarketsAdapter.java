@@ -15,6 +15,7 @@ import com.f119589.dto.AssetPairDto;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 public class MarketsAdapter extends RecyclerView.Adapter<MarketsAdapter.VH> {
 
@@ -101,6 +102,7 @@ public class MarketsAdapter extends RecyclerView.Adapter<MarketsAdapter.VH> {
         AssetPairDto p = filteredItems.get(pos);
         h.txtName.setText(p.display());
         h.txtSub.setText(p.wsName());
+        h.txtBadge.setText(buildBadge(p.display()));
         h.btnAdd.setOnClickListener(v -> listener.onAddToFavorites(p));
         h.itemView.setOnClickListener(v -> listener.onOpenDetails(p));
     }
@@ -113,13 +115,31 @@ public class MarketsAdapter extends RecyclerView.Adapter<MarketsAdapter.VH> {
     static class VH extends RecyclerView.ViewHolder {
         private final TextView txtName;
         private final TextView txtSub;
+        private final TextView txtBadge;
         private final ImageButton btnAdd;
 
         VH(@NonNull View v) {
             super(v);
             txtName = v.findViewById(R.id.txtName);
             txtSub = v.findViewById(R.id.txtSub);
+            txtBadge = v.findViewById(R.id.txtBadge);
             btnAdd = v.findViewById(R.id.btnAdd);
         }
+    }
+
+    private static String buildBadge(String display) {
+        if (display == null || display.isEmpty()) {
+            return "—";
+        }
+        String primary = display;
+        int slash = display.indexOf('/');
+        if (slash > 0) {
+            primary = display.substring(0, slash);
+        }
+        primary = primary.trim();
+        if (primary.length() > 4) {
+            primary = primary.substring(0, 4);
+        }
+        return primary.toUpperCase(Locale.US);
     }
 }

@@ -99,6 +99,7 @@ public class FavouritesAdapter extends RecyclerView.Adapter<FavouritesAdapter.VH
         h.txtSub.setText(e.getSymbol());
         h.txtPrice.setText(e.getLastPrice() > 0 ? String.valueOf(e.getLastPrice()) : "—");
         bindChange(h.txtChange, e.getChange24hPercent());
+        h.txtBadge.setText(buildBadge(e));
 
         SparklineBinder.bind(h.chart, e.getOhlc24hJson());
 
@@ -127,6 +128,7 @@ public class FavouritesAdapter extends RecyclerView.Adapter<FavouritesAdapter.VH
         private final TextView txtSub;
         private final TextView txtPrice;
         private final TextView txtChange;
+        private final TextView txtBadge;
         private final LineChart chart;
         private final ImageButton btnRemove;
 
@@ -136,6 +138,7 @@ public class FavouritesAdapter extends RecyclerView.Adapter<FavouritesAdapter.VH
             txtSub = v.findViewById(R.id.txtSub);
             txtPrice = v.findViewById(R.id.txtPrice);
             txtChange = v.findViewById(R.id.txtChange);
+            txtBadge = v.findViewById(R.id.txtBadge);
             chart = v.findViewById(R.id.sparkline);
             btnRemove = v.findViewById(R.id.btnRemove);
         }
@@ -151,5 +154,24 @@ public class FavouritesAdapter extends RecyclerView.Adapter<FavouritesAdapter.VH
         view.setText(formatted);
         int color = change > 0 ? 0xFF2E7D32 : (change < 0 ? 0xFFC62828 : Color.GRAY);
         view.setTextColor(color);
+    }
+
+    private static String buildBadge(FavouritePair pair) {
+        String display = pair.getDisplayName();
+        if (display == null || display.isEmpty()) {
+            display = pair.getSymbol();
+        }
+        if (display == null || display.isEmpty()) {
+            return "—";
+        }
+        int slash = display.indexOf('/');
+        if (slash > 0) {
+            display = display.substring(0, slash);
+        }
+        display = display.trim();
+        if (display.length() > 4) {
+            display = display.substring(0, 4);
+        }
+        return display.toUpperCase(Locale.US);
     }
 }

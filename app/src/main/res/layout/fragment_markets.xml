@@ -1,16 +1,41 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:padding="8dp">
+    android:padding="4dp">
 
-    <androidx.appcompat.widget.SearchView
-        android:id="@+id/searchMarkets"
+    <TextView
+        android:id="@+id/txtMarketsBlurb"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:queryHint="@string/markets_search_hint"
-        android:iconifiedByDefault="false" />
+        android:layout_marginHorizontal="8dp"
+        android:layout_marginTop="4dp"
+        android:text="@string/markets_blurb"
+        android:textColor="@color/text_secondary"
+        android:textSize="14sp" />
+
+    <com.google.android.material.card.MaterialCardView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginHorizontal="8dp"
+        android:layout_marginTop="8dp"
+        android:layout_marginBottom="12dp"
+        app:cardBackgroundColor="@color/surface_elevated"
+        app:cardCornerRadius="20dp"
+        app:cardElevation="0dp"
+        app:cardUseCompatPadding="false">
+
+        <androidx.appcompat.widget.SearchView
+            android:id="@+id/searchMarkets"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:iconifiedByDefault="false"
+            android:background="@android:color/transparent"
+            android:padding="4dp"
+            android:queryHint="@string/markets_search_hint" />
+    </com.google.android.material.card.MaterialCardView>
 
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/recyclerMarkets"
@@ -18,5 +43,6 @@
         android:layout_height="0dp"
         android:layout_weight="1"
         android:clipToPadding="false"
-        android:paddingTop="8dp" />
+        android:paddingHorizontal="4dp"
+        android:paddingBottom="8dp" />
 </LinearLayout>

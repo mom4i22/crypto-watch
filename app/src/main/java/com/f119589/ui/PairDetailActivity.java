@@ -10,6 +10,7 @@ import androidx.appcompat.app.AppCompatActivity;
 
 import com.f119589.R;
 import com.f119589.repository.CryptoRepository;
+import com.google.android.material.appbar.MaterialToolbar;
 
 public class PairDetailActivity extends AppCompatActivity {
 
@@ -31,12 +32,24 @@ public class PairDetailActivity extends AppCompatActivity {
         String symbol = getIntent().getStringExtra(EXTRA_SYMBOL);
         String display = getIntent().getStringExtra(EXTRA_DISPLAY);
 
+        MaterialToolbar toolbar = findViewById(R.id.detailToolbar);
+        toolbar.setNavigationOnClickListener(v ->
+                getOnBackPressedDispatcher().onBackPressed());
+
         TextView title = findViewById(R.id.txtTitle);
         TextView subtitle = findViewById(R.id.txtSubtitle);
-        title.setText(display != null ? display : symbol);
-        subtitle.setText(symbol);
+        String prettyName = display != null ? display : symbol;
+        if (prettyName == null) {
+            prettyName = getString(R.string.app_name);
+        }
+        title.setText(prettyName);
+        subtitle.setText(symbol != null ? symbol : "");
+        toolbar.setTitle(prettyName);
+        toolbar.setSubtitle(symbol != null ? symbol : "");
 
-        // Optionally, fetch fresh 24h OHLC for this pair for a larger chart
-        CryptoRepository.get(this).fetchAndCacheOhlc24h(symbol);
+        if (symbol != null) {
+            // Optionally, fetch fresh 24h OHLC for this pair for a larger chart
+            CryptoRepository.get(this).fetchAndCacheOhlc24h(symbol);
+        }
     }
 }

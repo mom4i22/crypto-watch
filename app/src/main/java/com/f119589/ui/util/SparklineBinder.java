@@ -1,9 +1,13 @@
 package com.f119589.ui.util;
 
+import android.graphics.Color;
 import android.graphics.LinearGradient;
 import android.graphics.Paint;
 import android.graphics.Shader;
 
+import androidx.core.content.ContextCompat;
+
+import com.f119589.R;
 import com.github.mikephil.charting.charts.LineChart;
 import com.github.mikephil.charting.components.Description;
 import com.github.mikephil.charting.components.XAxis;
@@ -49,6 +53,8 @@ public final class SparklineBinder {
             yr.setEnabled(false);
 
             chart.setViewPortOffsets(0f, 0f, 0f, 0f); // edge-to-edge
+            chart.setBackgroundColor(Color.TRANSPARENT);
+            chart.setNoDataText("");
         }
 
         LineDataSet set;
@@ -68,16 +74,15 @@ public final class SparklineBinder {
             set.setDrawHorizontalHighlightIndicator(false);
             set.setDrawVerticalHighlightIndicator(false);
 
-            // Color & fill: use chart's textColor as a base; MPChart handles ARGB ints.
-            int base = chart.getPaint(LineChart.PAINT_INFO).getColor();
-            set.setColor(base);
+            int accent = ContextCompat.getColor(chart.getContext(), R.color.sparkline_primary);
+            set.setColor(accent);
 
             // Subtle gradient fill under the line
             set.setDrawFilled(true);
             // Create a simple vertical gradient based on base color
             Paint p = chart.getRenderer().getPaintRender();
-            int top = (base & 0x00FFFFFF) | 0x22000000;   // low alpha
-            int bottom = (base & 0x00FFFFFF); // transparent
+            int top = (accent & 0x00FFFFFF) | 0x22000000;   // low alpha
+            int bottom = (accent & 0x00FFFFFF); // transparent
             LinearGradient lg = new LinearGradient(0, 0, 0, chart.getHeight(),
                     top, bottom, Shader.TileMode.CLAMP);
             set.setFillAlpha(120);
