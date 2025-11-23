@@ -35,4 +35,9 @@ public class FavouritePair {
      * Cached 24h OHLC data for the sparkline, stored as a compact JSON string.
      */
     private String ohlc24hJson;
+
+    /**
+     * Epoch millis when ohlc24hJson was last refreshed.
+     */
+    private long ohlc24hUpdatedAt;
 }

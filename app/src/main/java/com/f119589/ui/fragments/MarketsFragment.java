@@ -7,6 +7,8 @@ import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 
+import androidx.appcompat.widget.SearchView;
+
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
@@ -27,6 +29,7 @@ public class MarketsFragment extends Fragment implements MarketsAdapter.OnMarket
 
     private CryptoRepository repo;
     private MarketsAdapter adapter;
+    private String currentQuery = "";
 
     @Nullable
     @Override
@@ -41,6 +44,21 @@ public class MarketsFragment extends Fragment implements MarketsAdapter.OnMarket
         super.onViewCreated(v, savedInstanceState);
         repo = CryptoRepository.get(requireContext());
 
+        SearchView searchView = v.findViewById(R.id.searchMarkets);
+        searchView.setOnQueryTextListener(new SearchView.OnQueryTextListener() {
+            @Override
+            public boolean onQueryTextSubmit(String query) {
+                return false;
+            }
+
+            @Override
+            public boolean onQueryTextChange(String newText) {
+                currentQuery = newText != null ? newText : "";
+                adapter.filter(currentQuery);
+                return true;
+            }
+        });
+
         RecyclerView rv = v.findViewById(R.id.recyclerMarkets);
         rv.setLayoutManager(new LinearLayoutManager(requireContext()));
         rv.addItemDecoration(new DividerItemDecoration(requireContext(), DividerItemDecoration.VERTICAL));
@@ -48,7 +66,12 @@ public class MarketsFragment extends Fragment implements MarketsAdapter.OnMarket
         rv.setAdapter(adapter);
 
         // Observe markets list
-        repo.markets().observe(getViewLifecycleOwner(), (List<AssetPairDto> list) -> adapter.submit(list));
+        repo.markets().observe(getViewLifecycleOwner(), (List<AssetPairDto> list) -> {
+            adapter.submit(list);
+            if (!currentQuery.isEmpty()) {
+                adapter.filter(currentQuery);
+            }
+        });
 
         // Fetch latest
         repo.refreshAssetPairs();
@@ -57,7 +80,6 @@ public class MarketsFragment extends Fragment implements MarketsAdapter.OnMarket
     @Override
     public void onAddToFavorites(AssetPairDto pair) {
         repo.addFavorite(pair);
-        repo.fetchAndCacheOhlc24h(pair.wsName());
 
         Intent intent = new Intent(KrakenWebSocketService.ACTION_REFRESH_SUBSCRIPTIONS);
         intent.setPackage(requireContext().getPackageName());

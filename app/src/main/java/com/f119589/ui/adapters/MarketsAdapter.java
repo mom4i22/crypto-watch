@@ -25,6 +25,8 @@ public class MarketsAdapter extends RecyclerView.Adapter<MarketsAdapter.VH> {
 
     private final OnMarketClick listener;
     private final List<AssetPairDto> items = new ArrayList<>();
+    private final List<AssetPairDto> filteredItems = new ArrayList<>();
+    private String currentQuery = "";
 
     public MarketsAdapter(OnMarketClick listener) {
         this.listener = listener;
@@ -33,6 +35,27 @@ public class MarketsAdapter extends RecyclerView.Adapter<MarketsAdapter.VH> {
     public void submit(List<AssetPairDto> list) {
         items.clear();
         if (list != null) items.addAll(list);
+        applyFilter();
+    }
+
+    public void filter(String query) {
+        currentQuery = query != null ? query.trim().toLowerCase() : "";
+        applyFilter();
+    }
+
+    private void applyFilter() {
+        filteredItems.clear();
+        if (currentQuery.isEmpty()) {
+            filteredItems.addAll(items);
+        } else {
+            for (AssetPairDto dto : items) {
+                String display = dto.display() != null ? dto.display().toLowerCase() : "";
+                String ws = dto.wsName() != null ? dto.wsName().toLowerCase() : "";
+                if (display.contains(currentQuery) || ws.contains(currentQuery)) {
+                    filteredItems.add(dto);
+                }
+            }
+        }
         notifyDataSetChanged();
     }
 
@@ -45,7 +68,7 @@ public class MarketsAdapter extends RecyclerView.Adapter<MarketsAdapter.VH> {
 
     @Override
     public void onBindViewHolder(@NonNull VH h, int pos) {
-        AssetPairDto p = items.get(pos);
+        AssetPairDto p = filteredItems.get(pos);
         h.txtName.setText(p.display());
         h.txtSub.setText(p.wsName());
         h.btnAdd.setOnClickListener(v -> listener.onAddToFavorites(p));
@@ -54,7 +77,7 @@ public class MarketsAdapter extends RecyclerView.Adapter<MarketsAdapter.VH> {
 
     @Override
     public int getItemCount() {
-        return items.size();
+        return filteredItems.size();
     }
 
     static class VH extends RecyclerView.ViewHolder {

@@ -22,16 +22,20 @@ import com.f119589.service.KrakenWebSocketService;
 import com.f119589.ui.PairDetailActivity;
 import com.f119589.ui.adapters.FavouritesAdapter;
 
-import java.util.HashSet;
+import java.util.HashMap;
 import java.util.List;
-import java.util.Set;
+import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 public class FavouritesFragment extends Fragment implements FavouritesAdapter.OnFavoriteClick {
 
     private CryptoRepository repo;
     private FavouritesAdapter adapter;
 
-    private final Set<String> sparklineRequested = new HashSet<>();
+    private static final long SPARKLINE_MAX_AGE_MS = TimeUnit.MINUTES.toMillis(15);
+    private static final long SPARKLINE_REQUEST_COOLDOWN_MS = TimeUnit.SECONDS.toMillis(30);
+
+    private final Map<String, Long> sparklineRequestedAt = new HashMap<>();
 
     @Nullable
     @Override
@@ -57,11 +61,19 @@ public class FavouritesFragment extends Fragment implements FavouritesAdapter.On
             // 1) Update UI
             adapter.submit(list);
 
+            long now = System.currentTimeMillis();
             for (FavouritePair e : list) {
-                if (e.getOhlc24hJson() == null || e.getOhlc24hJson().isEmpty()) {
-                    if (sparklineRequested.add(e.getSymbol())) { // returns true if newly added
-                        CryptoRepository.get(requireContext()).fetchAndCacheOhlc24h(e.getSymbol());
+                boolean missing = e.getOhlc24hJson() == null || e.getOhlc24hJson().isEmpty();
+                boolean stale = !missing && e.getOhlc24hUpdatedAt() > 0
+                        && (now - e.getOhlc24hUpdatedAt()) > SPARKLINE_MAX_AGE_MS;
+                if (missing || stale) {
+                    Long lastRequested = sparklineRequestedAt.get(e.getSymbol());
+                    if (lastRequested == null || (now - lastRequested) > SPARKLINE_REQUEST_COOLDOWN_MS) {
+                        repo.fetchAndCacheOhlc24h(e.getSymbol());
+                        sparklineRequestedAt.put(e.getSymbol(), now);
                     }
+                } else {
+                    sparklineRequestedAt.remove(e.getSymbol());
                 }
             }
         });

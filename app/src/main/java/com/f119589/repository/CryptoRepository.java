@@ -171,10 +171,19 @@ public class CryptoRepository {
     public void fetchAndCacheOhlc24h(String wsSymbol) {
         io.submit(() -> {
             try {
+                FavouritePair favourite = favoriteDao.findOneSync(wsSymbol);
+                if (favourite == null) {
+                    // No persisted favorite, skip caching to avoid phantom rows.
+                    return;
+                }
+
                 String alt = wsToAltMap.get(wsSymbol);
                 if (alt == null) {
-                    // If markets not yet loaded, try a best-effort conversion: remove slash.
+                    // If markets not yet loaded, try a best-effort conversion: remove slash and trigger a refresh.
                     alt = wsSymbol.replace("/", "");
+                    if (wsToAltMap.isEmpty()) {
+                        refreshAssetPairs();
+                    }
                 }
 
                 // 5-min bars over ~24h => ~288 points; use 'since' = now - 24h
@@ -204,15 +213,7 @@ public class CryptoRepository {
                 }
 
                 String json = gson.toJson(compact);
-
-                FavouritePair e = favoriteDao.findOneSync(wsSymbol);
-                if (e == null) {
-                    // If user hasn't favorited yet, create a minimal entry so sparkline can render after they do.
-                    e = new FavouritePair();
-                    e.setSymbol(wsSymbol);
-                }
-                e.setOhlc24hJson(json);
-                favoriteDao.upsert(e);
+                favoriteDao.updateOhlcCache(wsSymbol, json, System.currentTimeMillis());
 
             } catch (Exception ex) {
                 Log.e(TAG, "fetchAndCacheOhlc24h error for " + wsSymbol, ex);
