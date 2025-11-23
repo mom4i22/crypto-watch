@@ -8,6 +8,7 @@ import android.widget.ImageButton;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
+import androidx.recyclerview.widget.DiffUtil;
 import androidx.recyclerview.widget.RecyclerView;
 
 import com.f119589.R;
@@ -35,9 +36,33 @@ public class FavouritesAdapter extends RecyclerView.Adapter<FavouritesAdapter.VH
     }
 
     public void submit(List<FavouritePair> list) {
+        List<FavouritePair> oldItems = new ArrayList<>(items);
+        List<FavouritePair> newItems = list != null ? new ArrayList<>(list) : new ArrayList<>();
+        DiffUtil.DiffResult diff = DiffUtil.calculateDiff(new DiffUtil.Callback() {
+            @Override
+            public int getOldListSize() {
+                return oldItems.size();
+            }
+
+            @Override
+            public int getNewListSize() {
+                return newItems.size();
+            }
+
+            @Override
+            public boolean areItemsTheSame(int oldItemPosition, int newItemPosition) {
+                return oldItems.get(oldItemPosition).getSymbol()
+                        .equals(newItems.get(newItemPosition).getSymbol());
+            }
+
+            @Override
+            public boolean areContentsTheSame(int oldItemPosition, int newItemPosition) {
+                return oldItems.get(oldItemPosition).equals(newItems.get(newItemPosition));
+            }
+        });
         items.clear();
-        if (list != null) items.addAll(list);
-        notifyDataSetChanged();
+        items.addAll(newItems);
+        diff.dispatchUpdatesTo(this);
     }
 
     /**

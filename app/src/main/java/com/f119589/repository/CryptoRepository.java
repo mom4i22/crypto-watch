@@ -38,8 +38,6 @@ public class CryptoRepository {
     private static final String TAG = "CryptoRepository";
 
     private static volatile CryptoRepository INSTANCE;
-
-    private final Context appCtx;
     private final KrakenClient api;
     private final FavouritePairDao favoriteDao;
     private final ExecutorService networkIo = Executors.newFixedThreadPool(4);
@@ -55,8 +53,8 @@ public class CryptoRepository {
     // Map wsName -> altName (needed because REST uses altName, while WS uses wsName)
     private final Map<String, String> wsToAltMap = new ConcurrentHashMap<>();
 
-    private CryptoRepository(Context appCtx) {
-        this.appCtx = appCtx;
+    private CryptoRepository(Context context) {
+        Context appContext = context.getApplicationContext();
         OkHttpClient ok = new OkHttpClient.Builder().build();
 
         Retrofit retrofit = new Retrofit.Builder()
@@ -66,7 +64,7 @@ public class CryptoRepository {
                 .build();
 
         this.api = retrofit.create(KrakenClient.class);
-        this.favoriteDao = AppDb.get(appCtx).favoritePairDao();
+        this.favoriteDao = AppDb.get(appContext).favoritePairDao();
     }
 
     public static CryptoRepository get(Context ctx) {
@@ -150,7 +148,8 @@ public class CryptoRepository {
     /**
      * Add/update a favorite (store symbol as wsName, and a friendly display).
      */
-    public void addFavorite(AssetPairDto pair) {
+    public void addFavorite(Context context, AssetPairDto pair) {
+        Context appContext = context.getApplicationContext();
         dbIo.submit(() -> {
             FavouritePair e = favoriteDao.findOneSync(pair.dbSymbol());
             if (e == null) {
@@ -159,16 +158,17 @@ public class CryptoRepository {
             }
             e.setDisplayName(pair.display());        // e.g., "BTC/USD" (if you choose to map XBT->BTC)
             favoriteDao.upsert(e);
-            notifyWsSubscriptionsChanged();
+            notifyWsSubscriptionsChanged(appContext);
         });
     }
 
-    public void removeFavorite(String wsSymbol) {
+    public void removeFavorite(Context context, String wsSymbol) {
+        Context appContext = context.getApplicationContext();
         dbIo.submit(() -> {
             FavouritePair e = favoriteDao.findOneSync(wsSymbol);
             if (e != null) {
                 favoriteDao.delete(e);
-                notifyWsSubscriptionsChanged();
+                notifyWsSubscriptionsChanged(appContext);
             }
         });
     }
@@ -372,9 +372,9 @@ public class CryptoRepository {
         }
     }
 
-    private void notifyWsSubscriptionsChanged() {
+    private void notifyWsSubscriptionsChanged(Context context) {
         Intent intent = new Intent(KrakenWebSocketService.ACTION_REFRESH_SUBSCRIPTIONS);
-        intent.setPackage(appCtx.getPackageName());
-        appCtx.sendBroadcast(intent);
+        intent.setPackage(context.getPackageName());
+        context.sendBroadcast(intent);
     }
 }

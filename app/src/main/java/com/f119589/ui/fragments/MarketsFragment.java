@@ -76,7 +76,7 @@ public class MarketsFragment extends Fragment implements MarketsAdapter.OnMarket
 
     @Override
     public void onAddToFavorites(AssetPairDto pair) {
-        repo.addFavorite(pair);
+        repo.addFavorite(requireContext(), pair);
         repo.refreshTickerSnapshot(pair.wsName());
     }
 

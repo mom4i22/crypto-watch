@@ -228,9 +228,6 @@ public class KrakenWebSocketService extends Service {
                     String ev = evt.get("event").getAsString();
                     if ("subscriptionStatus".equals(ev)) {
                         io.execute(() -> handleSubscriptionStatus(evt));
-                    } else if ("heartbeat".equals(ev)) {
-                        // optional: ignore or very-verbose log
-                        // android.util.Log.v(TAG, "WS heartbeat");
                     } else {
                         android.util.Log.d(TAG, "WS event: " + evt);
                     }

@@ -91,6 +91,6 @@ public class FavouritesFragment extends Fragment implements FavouritesAdapter.On
 
     @Override
     public void onRemove(FavouritePair e) {
-        repo.removeFavorite(e.getSymbol());
+        repo.removeFavorite(requireContext(), e.getSymbol());
     }
 }

@@ -7,6 +7,7 @@ import android.widget.ImageButton;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
+import androidx.recyclerview.widget.DiffUtil;
 import androidx.recyclerview.widget.RecyclerView;
 
 import com.f119589.R;
@@ -44,19 +45,48 @@ public class MarketsAdapter extends RecyclerView.Adapter<MarketsAdapter.VH> {
     }
 
     private void applyFilter() {
-        filteredItems.clear();
+        List<AssetPairDto> oldItems = new ArrayList<>(filteredItems);
+        List<AssetPairDto> newItems = new ArrayList<>();
         if (currentQuery.isEmpty()) {
-            filteredItems.addAll(items);
+            newItems.addAll(items);
         } else {
             for (AssetPairDto dto : items) {
                 String display = dto.display() != null ? dto.display().toLowerCase() : "";
                 String ws = dto.wsName() != null ? dto.wsName().toLowerCase() : "";
                 if (display.contains(currentQuery) || ws.contains(currentQuery)) {
-                    filteredItems.add(dto);
+                    newItems.add(dto);
                 }
             }
         }
-        notifyDataSetChanged();
+        DiffUtil.DiffResult diff = DiffUtil.calculateDiff(new DiffUtil.Callback() {
+            @Override
+            public int getOldListSize() {
+                return oldItems.size();
+            }
+
+            @Override
+            public int getNewListSize() {
+                return newItems.size();
+            }
+
+            @Override
+            public boolean areItemsTheSame(int oldItemPosition, int newItemPosition) {
+                String oldWs = oldItems.get(oldItemPosition).wsName();
+                String newWs = newItems.get(newItemPosition).wsName();
+                if (oldWs == null) {
+                    return newWs == null;
+                }
+                return oldWs.equals(newWs);
+            }
+
+            @Override
+            public boolean areContentsTheSame(int oldItemPosition, int newItemPosition) {
+                return oldItems.get(oldItemPosition).equals(newItems.get(newItemPosition));
+            }
+        });
+        filteredItems.clear();
+        filteredItems.addAll(newItems);
+        diff.dispatchUpdatesTo(this);
     }
 
     @NonNull
