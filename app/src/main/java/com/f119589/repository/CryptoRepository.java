@@ -208,20 +208,30 @@ public class CryptoRepository {
                 JsonArray arr = result.getAsJsonArray(alt);
                 if (arr == null) return;
 
-                // Compact to [[t, close], ...]
+                // Compact to [[t, close], ...] and track first/last closes for 24h change.
+                double firstClose = Double.NaN;
+                double lastClose = Double.NaN;
                 JsonArray compact = new JsonArray();
                 for (JsonElement el : arr) {
                     JsonArray row = el.getAsJsonArray();
                     long t = row.get(0).getAsLong();
                     double close = row.get(4).getAsDouble();
+                    if (Double.isNaN(firstClose)) firstClose = close;
+                    lastClose = close;
                     JsonArray pt = new JsonArray();
                     pt.add(t);
                     pt.add(close);
                     compact.add(pt);
                 }
 
+                Double change24hPercent = null;
+                if (!Double.isNaN(firstClose) && !Double.isNaN(lastClose) && firstClose != 0d) {
+                    change24hPercent = ((lastClose - firstClose) / firstClose) * 100.0;
+                }
+
                 String json = gson.toJson(compact);
-                favoriteDao.updateOhlcCache(wsSymbol, json, System.currentTimeMillis());
+                Double firstCloseValue = Double.isNaN(firstClose) ? null : firstClose;
+                favoriteDao.updateOhlcCache(wsSymbol, json, System.currentTimeMillis(), change24hPercent, firstCloseValue);
 
             } catch (Exception ex) {
                 Log.e(TAG, "fetchAndCacheOhlc24h error for " + wsSymbol, ex);
@@ -235,7 +245,16 @@ public class CryptoRepository {
     public void updateLivePrice(String wsSymbol, double price) {
         dbIo.submit(() -> {
             try {
-                favoriteDao.updatePrice(wsSymbol, price, System.currentTimeMillis());
+                FavouritePair favourite = favoriteDao.findOneSync(wsSymbol);
+                if (favourite == null) return;
+
+                Double baseline = favourite.getOhlc24hFirstClose();
+                Double change = favourite.getChange24hPercent();
+                if (baseline != null && baseline != 0d) {
+                    change = ((price - baseline) / baseline) * 100.0;
+                }
+
+                favoriteDao.updatePriceAndChange(wsSymbol, price, System.currentTimeMillis(), change);
             } catch (Exception ex) {
                 Log.e(TAG, "updateLivePrice error", ex);
             }

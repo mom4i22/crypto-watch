@@ -29,9 +29,9 @@ public interface FavouritePairDao {
     @Delete
     void delete(FavouritePair entity);
 
-    @Query("UPDATE favorites SET lastPrice = :price, lastUpdated = :updatedAt WHERE symbol = :symbol")
-    void updatePrice(String symbol, double price, long updatedAt);
+    @Query("UPDATE favorites SET lastPrice = :price, lastUpdated = :updatedAt, change24hPercent = :changePercent WHERE symbol = :symbol")
+    void updatePriceAndChange(String symbol, double price, long updatedAt, Double changePercent);
 
-    @Query("UPDATE favorites SET ohlc24hJson = :json, ohlc24hUpdatedAt = :updatedAt WHERE symbol = :symbol")
-    void updateOhlcCache(String symbol, String json, long updatedAt);
+    @Query("UPDATE favorites SET ohlc24hJson = :json, ohlc24hUpdatedAt = :updatedAt, change24hPercent = :changePercent, ohlc24hFirstClose = :firstClose WHERE symbol = :symbol")
+    void updateOhlcCache(String symbol, String json, long updatedAt, Double changePercent, Double firstClose);
 }

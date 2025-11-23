@@ -40,4 +40,14 @@ public class FavouritePair {
      * Epoch millis when ohlc24hJson was last refreshed.
      */
     private long ohlc24hUpdatedAt;
+
+    /**
+     * Percentage change between the first and last close in the cached OHLC window.
+     */
+    private Double change24hPercent;
+
+    /**
+     * First close value from the cached 24h OHLC window (baseline for live updates).
+     */
+    private Double ohlc24hFirstClose;
 }
