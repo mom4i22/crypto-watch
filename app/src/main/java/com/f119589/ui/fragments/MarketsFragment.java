@@ -10,7 +10,6 @@ import android.view.ViewGroup;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
-import androidx.localbroadcastmanager.content.LocalBroadcastManager;
 import androidx.recyclerview.widget.DividerItemDecoration;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
@@ -60,13 +59,15 @@ public class MarketsFragment extends Fragment implements MarketsAdapter.OnMarket
         repo.addFavorite(pair);
         repo.fetchAndCacheOhlc24h(pair.wsName());
 
-        LocalBroadcastManager.getInstance(requireContext())
-                .sendBroadcast(new Intent(KrakenWebSocketService.ACTION_REFRESH_SUBSCRIPTIONS));
+        Intent intent = new Intent(KrakenWebSocketService.ACTION_REFRESH_SUBSCRIPTIONS);
+        intent.setPackage(requireContext().getPackageName());
+        requireContext().sendBroadcast(intent);
         // Cache sparkline data early (optional; also can be done in FavoritesFragment)
 
         new Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
-            androidx.localbroadcastmanager.content.LocalBroadcastManager.getInstance(requireContext())
-                    .sendBroadcast(new Intent(KrakenWebSocketService.ACTION_REFRESH_SUBSCRIPTIONS));
+            Intent delayedIntent = new Intent(KrakenWebSocketService.ACTION_REFRESH_SUBSCRIPTIONS);
+            delayedIntent.setPackage(requireContext().getPackageName());
+            requireContext().sendBroadcast(delayedIntent);
         }, 200);
 
         repo.refreshTickerSnapshot(pair.wsName());

@@ -10,7 +10,7 @@ import android.os.IBinder;
 import android.util.Log;
 
 import androidx.annotation.Nullable;
-import androidx.localbroadcastmanager.content.LocalBroadcastManager;
+import androidx.core.content.ContextCompat;
 
 import com.f119589.data.db.AppDb;
 import com.f119589.data.entity.FavouritePair;
@@ -37,13 +37,6 @@ import okhttp3.WebSocketListener;
 public class KrakenWebSocketService extends Service {
 
     public static final String TAG = "PriceWsService";
-
-    /**
-     * Local broadcast sent on every tick.
-     */
-    public static final String ACTION_TICK = "ws_tick";
-    public static final String EXTRA_SYMBOL = "symbol"; // wsName e.g., "XBT/USD"
-    public static final String EXTRA_PRICE = "price";  // double
 
     /**
      * Send this (regular) broadcast to force the service to resubscribe to current favorites.
@@ -78,16 +71,19 @@ public class KrakenWebSocketService extends Service {
         startForeground(Notifications.NOTIF_ID_FOREGROUND, Notifications.foreground(this));
 
         client = new OkHttpClient.Builder().build();
-        LocalBroadcastManager.getInstance(this).registerReceiver(refreshReceiver,
-                new IntentFilter(ACTION_REFRESH_SUBSCRIPTIONS));
-
+        ContextCompat.registerReceiver(
+                this,
+                refreshReceiver,
+                new IntentFilter(ACTION_REFRESH_SUBSCRIPTIONS),
+                ContextCompat.RECEIVER_NOT_EXPORTED
+        );
         connect();
     }
 
     @Override
     public void onDestroy() {
         try {
-            LocalBroadcastManager.getInstance(this).unregisterReceiver(refreshReceiver);
+            unregisterReceiver(refreshReceiver);
         } catch (Exception ignored) {
         }
         intentionalClose = true;
@@ -268,13 +264,10 @@ public class KrakenWebSocketService extends Service {
 
             double last = Double.parseDouble(c.get(0).getAsString());
 
-            // Update DB and broadcast to UI
-            CryptoRepository.get(getApplicationContext()).updateLivePrice(wsSymbol, last);
-
-            Intent i = new Intent(ACTION_TICK);
-            i.putExtra(EXTRA_SYMBOL, wsSymbol);
-            i.putExtra(EXTRA_PRICE, last);
-            LocalBroadcastManager.getInstance(this).sendBroadcast(i);
+            // Update DB and post tick event to LiveData
+            CryptoRepository repo = CryptoRepository.get(getApplicationContext());
+            repo.updateLivePrice(wsSymbol, last);
+            repo.postTickEvent(wsSymbol, last);
 
         } catch (Exception ex) {
             android.util.Log.e(TAG, "handleMessage parse error: " + text, ex);

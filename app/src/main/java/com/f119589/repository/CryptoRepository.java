@@ -11,6 +11,7 @@ import com.f119589.data.db.AppDb;
 import com.f119589.data.db.FavouritePairDao;
 import com.f119589.data.entity.FavouritePair;
 import com.f119589.dto.AssetPairDto;
+import com.f119589.dto.TickEvent;
 import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
@@ -43,6 +44,9 @@ public class CryptoRepository {
 
     // Live markets list (from /AssetPairs)
     private final MutableLiveData<List<AssetPairDto>> marketsLive = new MutableLiveData<>();
+
+    // Live tick events from WebSocket service
+    private final MutableLiveData<TickEvent> tickEventsLive = new MutableLiveData<>();
 
     // Map wsName -> altName (needed because REST uses altName, while WS uses wsName)
     private final Map<String, String> wsToAltMap = new ConcurrentHashMap<>();
@@ -112,7 +116,7 @@ public class CryptoRepository {
 
                     if (altName == null || wsName == null) continue;
 
-                    String display = prettifyDisplay(wsName, base, quote);
+                    String display = prettifyDisplay(base, quote);
                     list.add(new AssetPairDto(wsName, altName, display, base, quote));
                     wsToAltMap.put(wsName, altName);
                 }
@@ -229,6 +233,20 @@ public class CryptoRepository {
         });
     }
 
+    /**
+     * Post a tick event from WebSocket service (for immediate UI updates).
+     */
+    public void postTickEvent(String wsSymbol, double price) {
+        tickEventsLive.postValue(new TickEvent(wsSymbol, price));
+    }
+
+    /**
+     * Observe tick events from WebSocket service.
+     */
+    public LiveData<TickEvent> tickEvents() {
+        return tickEventsLive;
+    }
+
     // --------------------------- Optional helpers ---------------------------
 
     /**
@@ -278,7 +296,7 @@ public class CryptoRepository {
     /**
      * Prefer wsName for display; optionally map XBT->BTC if desired.
      */
-    private static String prettifyDisplay(String wsName, String base, String quote) {
+    private static String prettifyDisplay(String base, String quote) {
         // Example: map XBT -> BTC for friendlier display (optional).
         String baseUi = mapTickerUi(base);
         String quoteUi = mapTickerUi(quote);

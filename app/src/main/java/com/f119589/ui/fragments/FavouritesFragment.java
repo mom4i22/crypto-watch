@@ -1,9 +1,6 @@
 package com.f119589.ui.fragments;
 
-import android.content.BroadcastReceiver;
-import android.content.Context;
 import android.content.Intent;
-import android.content.IntentFilter;
 import android.os.Bundle;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -13,13 +10,13 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
 import androidx.lifecycle.LiveData;
-import androidx.localbroadcastmanager.content.LocalBroadcastManager;
 import androidx.recyclerview.widget.DividerItemDecoration;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
 import com.f119589.R;
 import com.f119589.data.entity.FavouritePair;
+import com.f119589.dto.TickEvent;
 import com.f119589.repository.CryptoRepository;
 import com.f119589.service.KrakenWebSocketService;
 import com.f119589.ui.PairDetailActivity;
@@ -35,17 +32,6 @@ public class FavouritesFragment extends Fragment implements FavouritesAdapter.On
     private FavouritesAdapter adapter;
 
     private final Set<String> sparklineRequested = new HashSet<>();
-
-    private final BroadcastReceiver tickReceiver = new BroadcastReceiver() {
-        @Override
-        public void onReceive(Context context, Intent intent) {
-            if (KrakenWebSocketService.ACTION_TICK.equals(intent.getAction())) {
-                String sym = intent.getStringExtra(KrakenWebSocketService.EXTRA_SYMBOL);
-                double price = intent.getDoubleExtra(KrakenWebSocketService.EXTRA_PRICE, Double.NaN);
-                adapter.pushLiveTick(sym, price); // smooth UI without waiting for Room emit
-            }
-        }
-    };
 
     @Nullable
     @Override
@@ -79,19 +65,13 @@ public class FavouritesFragment extends Fragment implements FavouritesAdapter.On
                 }
             }
         });
-    }
 
-    @Override
-    public void onResume() {
-        super.onResume();
-        LocalBroadcastManager.getInstance(requireContext()).registerReceiver(
-                tickReceiver, new IntentFilter(KrakenWebSocketService.ACTION_TICK));
-    }
-
-    @Override
-    public void onPause() {
-        LocalBroadcastManager.getInstance(requireContext()).unregisterReceiver(tickReceiver);
-        super.onPause();
+        // Observe tick events for immediate UI updates
+        repo.tickEvents().observe(getViewLifecycleOwner(), (TickEvent event) -> {
+            if (event != null) {
+                adapter.pushLiveTick(event.symbol(), event.price());
+            }
+        });
     }
 
     @Override
@@ -103,7 +83,8 @@ public class FavouritesFragment extends Fragment implements FavouritesAdapter.On
     public void onRemove(FavouritePair e) {
         repo.removeFavorite(e.getSymbol());
         // Ask WS to refresh subscriptions
-        LocalBroadcastManager.getInstance(requireContext())
-                .sendBroadcast(new Intent(KrakenWebSocketService.ACTION_REFRESH_SUBSCRIPTIONS));
+        Intent intent = new Intent(KrakenWebSocketService.ACTION_REFRESH_SUBSCRIPTIONS);
+        intent.setPackage(requireContext().getPackageName());
+        requireContext().sendBroadcast(intent);
     }
 }
