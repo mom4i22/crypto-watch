@@ -54,8 +54,8 @@ public abstract class AppDb extends RoomDatabase {
                                     AppDb.class,
                                     "cryptowatch.db"
                             )
-                                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
-                                    .build();
+                            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                            .build();
                 }
             }
         }

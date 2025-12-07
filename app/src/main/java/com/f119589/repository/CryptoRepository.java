@@ -19,14 +19,15 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 
-import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.stream.Collectors;
 
 import okhttp3.OkHttpClient;
 import retrofit2.Response;
@@ -44,10 +45,8 @@ public class CryptoRepository {
     private final ExecutorService dbIo = Executors.newSingleThreadExecutor();
     private final Gson gson = new Gson();
 
-    // Live markets list (from /AssetPairs)
     private final MutableLiveData<List<AssetPairDto>> marketsLive = new MutableLiveData<>();
 
-    // Live tick events from WebSocket service
     private final MutableLiveData<TickEvent> tickEventsLive = new MutableLiveData<>();
 
     // Map wsName -> altName (needed because REST uses altName, while WS uses wsName)
@@ -78,85 +77,67 @@ public class CryptoRepository {
         return INSTANCE;
     }
 
-    // --------------------------- Markets (REST) ---------------------------
-
-    /**
-     * Expose markets list to UI (observe in MarketsFragment).
-     */
     public LiveData<List<AssetPairDto>> markets() {
         return marketsLive;
     }
 
-    /**
-     * Pull /AssetPairs, parse into AssetPair list, publish to LiveData.
-     */
     public void refreshAssetPairs() {
         networkIo.submit(() -> {
             try {
-                Response<JsonObject> r = api.getAssetPairs().execute();
-                if (!r.isSuccessful() || r.body() == null) {
-                    Log.w(TAG, "AssetPairs failed: " + (r.errorBody() != null ? r.errorBody().string() : "unknown"));
+                Response<JsonObject> response = api.getAssetPairs().execute();
+                if (!response.isSuccessful() || response.body() == null) {
+                    Log.w(TAG, "Failed fetching asset pairs from Kraken");
                     return;
                 }
-                JsonObject body = r.body();
+                JsonObject body = response.body();
                 JsonObject result = body.getAsJsonObject("result");
                 if (result == null) {
-                    Log.w(TAG, "AssetPairs: missing result");
+                    Log.w(TAG, "Missing result data in asset pairs response");
                     return;
                 }
 
-                List<AssetPairDto> list = new ArrayList<>();
                 wsToAltMap.clear();
+                List<AssetPairDto> assetPairs = result.entrySet()
+                        .stream()
+                        .map(Map.Entry::getValue)
+                        .map(JsonElement::getAsJsonObject)
+                        .map(obj -> {
+                            String altName = optString(obj, "altname", null); //"XBTUSD"
+                            String wsName = optString(obj, "wsname", null); //"XBT/USD"
+                            if (altName == null || wsName == null) return null;
 
-                for (Map.Entry<String, JsonElement> e : result.entrySet()) {
-                    JsonObject obj = e.getValue().getAsJsonObject();
+                            String base = trimPrefix(optString(obj, "base", "")); //"XXBT" -> "XBT"
+                            String quote = trimPrefix(optString(obj, "quote", "")); //"ZUSD" -> "USD"
+                            String display = prettifyDisplay(base, quote);
+                            return new AssetPairDto(wsName, altName, display, base, quote);
+                        })
+                        .filter(Objects::nonNull)
+                        .peek(dto -> wsToAltMap.put(dto.wsName(), dto.altName()))
+                        .sorted(Comparator
+                                .comparing(AssetPairDto::quote)
+                                .thenComparing(AssetPairDto::base))
+                        .collect(Collectors.toList());
 
-                    // Kraken fields of interest
-                    String altName = optString(obj, "altname", null);    // e.g., "XBTUSD"
-                    String wsName = optString(obj, "wsname", null);     // e.g., "XBT/USD"
-                    String base = trimPrefix(optString(obj, "base", ""));  // e.g., "XXBT" -> "XBT"
-                    String quote = trimPrefix(optString(obj, "quote", "")); // e.g., "ZUSD" -> "USD"
-
-                    if (altName == null || wsName == null) continue;
-
-                    String display = prettifyDisplay(base, quote);
-                    list.add(new AssetPairDto(wsName, altName, display, base, quote));
-                    wsToAltMap.put(wsName, altName);
-                }
-
-                // Sort nicely (quote, then base)
-                list.sort(Comparator
-                        .comparing(AssetPairDto::quote)
-                        .thenComparing(AssetPairDto::base));
-
-                marketsLive.postValue(list);
+                marketsLive.postValue(assetPairs);
             } catch (Exception ex) {
                 Log.e(TAG, "refreshAssetPairs error", ex);
             }
         });
     }
 
-    // --------------------------- Favorites (Room) ---------------------------
-
-    /**
-     * Observe favorites list from Room.
-     */
     public LiveData<List<FavouritePair>> favorites() {
         return favoriteDao.observeAll();
     }
 
-    /**
-     * Add/update a favorite (store symbol as wsName, and a friendly display).
-     */
     public void addFavorite(Context context, AssetPairDto pair) {
         Context appContext = context.getApplicationContext();
         dbIo.submit(() -> {
             FavouritePair e = favoriteDao.findOneSync(pair.dbSymbol());
             if (e == null) {
                 e = new FavouritePair();
-                e.setSymbol(pair.dbSymbol());          // e.g., "XBT/USD"
             }
-            e.setDisplayName(pair.display());        // e.g., "BTC/USD" (if you choose to map XBT->BTC)
+            e.setSymbol(pair.dbSymbol());
+            e.setDisplayName(pair.display());
             favoriteDao.upsert(e);
             notifyWsSubscriptionsChanged(appContext);
         });
@@ -172,8 +153,6 @@ public class CryptoRepository {
             }
         });
     }
-
-    // --------------------------- OHLC cache (sparkline) ---------------------------
 
     /**
      * Fetches approx. 24h worth of OHLC candles (using 5-min interval),

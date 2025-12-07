@@ -6,6 +6,6 @@ public record AssetPairDto(String wsName,
                            String base,
                            String quote) {
     public String dbSymbol() {
-        return wsName;
+        return this.wsName;
     }
 }
