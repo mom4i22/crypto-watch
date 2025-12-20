@@ -7,17 +7,21 @@ import android.util.Log;
 import androidx.lifecycle.LiveData;
 import androidx.lifecycle.MutableLiveData;
 
+import com.f119589.data.client.CoinGeckoClient;
 import com.f119589.data.client.KrakenClient;
 import com.f119589.data.db.AppDb;
 import com.f119589.data.db.FavouritePairDao;
 import com.f119589.data.entity.FavouritePair;
 import com.f119589.dto.AssetPairDto;
+import com.f119589.dto.AssetPairsResponse;
+import com.f119589.dto.MarketSnapshotDto;
+import com.f119589.dto.MarketSnapshotResponse;
+import com.f119589.dto.OhlcResponse;
 import com.f119589.dto.TickEvent;
+import com.f119589.dto.TickerResponse;
 import com.f119589.service.KrakenWebSocketService;
 import com.google.gson.Gson;
 import com.google.gson.JsonArray;
-import com.google.gson.JsonElement;
-import com.google.gson.JsonObject;
 
 import java.util.Comparator;
 import java.util.List;
@@ -37,17 +41,21 @@ import retrofit2.converter.gson.GsonConverterFactory;
 public class CryptoRepository {
 
     private static final String TAG = "CryptoRepository";
+    private static final String USD_COINGECKO_NAME = "usd";
+    private static final String BTC_COINGECKO_NAME = "btc";
 
     private static volatile CryptoRepository INSTANCE;
     private final KrakenClient api;
+    private final CoinGeckoClient geckoApi;
     private final FavouritePairDao favoriteDao;
     private final ExecutorService networkIo = Executors.newFixedThreadPool(4);
     private final ExecutorService dbIo = Executors.newSingleThreadExecutor();
-    private final Gson gson = new Gson();
+    private final Gson gson;
 
     private final MutableLiveData<List<AssetPairDto>> marketsLive = new MutableLiveData<>();
 
     private final MutableLiveData<TickEvent> tickEventsLive = new MutableLiveData<>();
+    private final MutableLiveData<MarketSnapshotDto> marketSnapshotLive = new MutableLiveData<>();
 
     // Map wsName -> altName (needed because REST uses altName, while WS uses wsName)
     private final Map<String, String> wsToAltMap = new ConcurrentHashMap<>();
@@ -55,14 +63,22 @@ public class CryptoRepository {
     private CryptoRepository(Context context) {
         Context appContext = context.getApplicationContext();
         OkHttpClient ok = new OkHttpClient.Builder().build();
+        this.gson = new Gson();
 
         Retrofit retrofit = new Retrofit.Builder()
                 .baseUrl("https://api.kraken.com")
                 .client(ok)
-                .addConverterFactory(GsonConverterFactory.create())
+                .addConverterFactory(GsonConverterFactory.create(gson))
+                .build();
+
+        Retrofit geckoRetrofit = new Retrofit.Builder()
+                .baseUrl("https://api.coingecko.com/api/v3/")
+                .client(ok)
+                .addConverterFactory(GsonConverterFactory.create(gson))
                 .build();
 
         this.api = retrofit.create(KrakenClient.class);
+        this.geckoApi = geckoRetrofit.create(CoinGeckoClient.class);
         this.favoriteDao = AppDb.get(appContext).favoritePairDao();
     }
 
@@ -81,38 +97,34 @@ public class CryptoRepository {
         return marketsLive;
     }
 
+    public LiveData<MarketSnapshotDto> marketSnapshot() {
+        return marketSnapshotLive;
+    }
+
     public void refreshAssetPairs() {
         networkIo.submit(() -> {
             try {
-                Response<JsonObject> response = api.getAssetPairs().execute();
-                if (!response.isSuccessful() || response.body() == null) {
+                Response<AssetPairsResponse> response = api.getAssetPairs().execute();
+                if (!response.isSuccessful() || response.body() == null || response.body().result() == null) {
                     Log.w(TAG, "Failed fetching asset pairs from Kraken");
                     return;
                 }
-                JsonObject body = response.body();
-                JsonObject result = body.getAsJsonObject("result");
-                if (result == null) {
-                    Log.w(TAG, "Missing result data in asset pairs response");
-                    return;
-                }
-
                 wsToAltMap.clear();
-                List<AssetPairDto> assetPairs = result.entrySet()
+                List<AssetPairDto> assetPairs = response.body().result()
+                        .values()
                         .stream()
-                        .map(Map.Entry::getValue)
-                        .map(JsonElement::getAsJsonObject)
-                        .map(obj -> {
-                            String altName = optString(obj, "altname", null); //"XBTUSD"
-                            String wsName = optString(obj, "wsname", null); //"XBT/USD"
+                        .map(info -> {
+                            if (info == null) return null;
+                            String altName = info.altName();
+                            String wsName = info.wsName();
                             if (altName == null || wsName == null) return null;
-
-                            String base = trimPrefix(optString(obj, "base", "")); //"XXBT" -> "XBT"
-                            String quote = trimPrefix(optString(obj, "quote", "")); //"ZUSD" -> "USD"
+                            String base = trimPrefix(info.base());
+                            String quote = trimPrefix(info.quote());
                             String display = prettifyDisplay(base, quote);
+                            wsToAltMap.put(wsName, altName);
                             return new AssetPairDto(wsName, altName, display, base, quote);
                         })
                         .filter(Objects::nonNull)
-                        .peek(dto -> wsToAltMap.put(dto.wsName(), dto.altName()))
                         .sorted(Comparator
                                 .comparing(AssetPairDto::quote)
                                 .thenComparing(AssetPairDto::base))
@@ -121,6 +133,28 @@ public class CryptoRepository {
                 marketsLive.postValue(assetPairs);
             } catch (Exception ex) {
                 Log.e(TAG, "refreshAssetPairs error", ex);
+            }
+        });
+    }
+
+    public void refreshMarketSnapshot() {
+        networkIo.submit(() -> {
+            try {
+                Response<MarketSnapshotResponse> response = geckoApi.getGlobal().execute();
+                if (!response.isSuccessful() || response.body() == null) {
+                    Log.w(TAG, "Failed fetching market snapshot from CoinGecko");
+                    return;
+                }
+                MarketSnapshotResponse.MarketSnapshotData data = response.body().data();
+                double marketCap = data.totalMarketCap().get(USD_COINGECKO_NAME);
+                double volume = data.totalVolume().get(USD_COINGECKO_NAME);
+                double btcDominancePercentage = data.marketCapPercentage().get(BTC_COINGECKO_NAME);
+
+                marketSnapshotLive.postValue(new MarketSnapshotDto(
+                        marketCap, volume, btcDominancePercentage
+                ));
+            } catch (Exception ex) {
+                Log.e(TAG, "refreshMarketSnapshot error", ex);
             }
         });
     }
@@ -177,24 +211,24 @@ public class CryptoRepository {
                 long nowSec = System.currentTimeMillis() / 1000L;
                 long since = nowSec - 24 * 60 * 60;
 
-                Response<JsonObject> r = api.getOhlc(alt, 5, since).execute();
+                Response<OhlcResponse> r = api.getOhlc(alt, 5, since).execute();
                 if (!r.isSuccessful() || r.body() == null) return;
 
-                JsonObject result = r.body().getAsJsonObject("result");
+                Map<String, List<List<Double>>> result = r.body().result();
                 if (result == null) return;
 
                 // In result, the pair key is the alt name (e.g., "XBTUSD")
-                JsonArray arr = result.getAsJsonArray(alt);
+                List<List<Double>> arr = result.get(alt);
                 if (arr == null) return;
 
                 // Compact to [[t, close], ...] and track first/last closes for 24h change.
                 double firstClose = Double.NaN;
                 double lastClose = Double.NaN;
                 JsonArray compact = new JsonArray();
-                for (JsonElement el : arr) {
-                    JsonArray row = el.getAsJsonArray();
-                    long t = row.get(0).getAsLong();
-                    double close = row.get(4).getAsDouble();
+                for (List<Double> row : arr) {
+                    if (row == null || row.size() < 5) continue;
+                    long t = row.get(0).longValue();
+                    double close = row.get(4);
                     if (Double.isNaN(firstClose)) firstClose = close;
                     lastClose = close;
                     JsonArray pt = new JsonArray();
@@ -267,20 +301,17 @@ public class CryptoRepository {
                     Log.w(TAG, "refreshTickerSnapshot: missing alt name for " + wsSymbol);
                     return;
                 }
-                Response<JsonObject> r = api.getTicker(alt).execute();
+                Response<TickerResponse> r = api.getTicker(alt).execute();
                 if (!r.isSuccessful() || r.body() == null) return;
 
-                JsonObject result = r.body().getAsJsonObject("result");
+                Map<String, TickerResponse.TickerInfo> result = r.body().result();
                 if (result == null) return;
 
                 // Ticker result key is alt name. Inside, "c" is last trade price [<price>, <lot volume>].
-                JsonObject pairObj = result.getAsJsonObject(alt);
-                if (pairObj == null) return;
+                TickerResponse.TickerInfo pairObj = result.get(alt);
+                if (pairObj == null || pairObj.lastTradeClose() == null || pairObj.lastTradeClose().isEmpty()) return;
 
-                JsonArray cArr = pairObj.getAsJsonArray("c");
-                if (cArr == null || cArr.isEmpty()) return;
-
-                double last = Double.parseDouble(cArr.get(0).getAsString());
+                double last = Double.parseDouble(pairObj.lastTradeClose().get(0));
                 updateLivePrice(wsSymbol, last);
 
             } catch (Exception ex) {
@@ -290,10 +321,6 @@ public class CryptoRepository {
     }
 
     // --------------------------- Private utils ---------------------------
-
-    private static String optString(JsonObject obj, String key, String def) {
-        return obj.has(key) && !obj.get(key).isJsonNull() ? obj.get(key).getAsString() : def;
-    }
 
     /**
      * Kraken bases/quotes sometimes include prefixes like 'X'/'Z' (e.g., "XXBT","ZUSD"). Strip leading non-letters.
@@ -329,15 +356,13 @@ public class CryptoRepository {
         if (alt != null) return alt;
 
         try {
-            Response<JsonObject> response = api.getAssetPairs().execute();
-            if (!response.isSuccessful() || response.body() == null) return null;
-            JsonObject result = response.body().getAsJsonObject("result");
-            if (result == null) return null;
+            Response<AssetPairsResponse> response = api.getAssetPairs().execute();
+            if (!response.isSuccessful() || response.body() == null || response.body().result() == null) return null;
 
-            for (Map.Entry<String, JsonElement> e : result.entrySet()) {
-                JsonObject obj = e.getValue().getAsJsonObject();
-                String altName = optString(obj, "altname", null);
-                String wsName = optString(obj, "wsname", null);
+            for (AssetPairsResponse.AssetPairInfo info : response.body().result().values()) {
+                if (info == null) continue;
+                String altName = info.altName();
+                String wsName = info.wsName();
                 if (altName == null || wsName == null) continue;
                 wsToAltMap.put(wsName, altName);
                 if (wsSymbol.equals(wsName)) {

@@ -12,4 +12,8 @@
     <string name="pair_detail_chart_header">24h chart</string>
     <string name="pair_detail_chart_info">A full-size chart view is in progress. For now, keep an eye on the mini sparklines inside your favorites list.</string>
     <string name="pair_detail_description">Kraken data is fetched directly from the official API. Times are in UTC and prices refresh as soon as the WebSocket broadcasts new ticks.</string>
+    <string name="market_snapshot_title">Market snapshot</string>
+    <string name="market_snapshot_mcap">Global mcap</string>
+    <string name="market_snapshot_volume">24h volume</string>
+    <string name="market_snapshot_btc">BTC dominance</string>
 </resources>
