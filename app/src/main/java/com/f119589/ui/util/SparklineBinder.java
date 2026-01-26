@@ -1,9 +1,6 @@
 package com.f119589.ui.util;
 
 import android.graphics.Color;
-import android.graphics.LinearGradient;
-import android.graphics.Paint;
-import android.graphics.Shader;
 
 import androidx.core.content.ContextCompat;
 
@@ -28,11 +25,14 @@ public final class SparklineBinder {
     }
 
     public static void bind(LineChart chart, String compactJson) {
-        // Parse entries
-        List<Entry> entries = SparklineParser.parse(compactJson);
+        bind(chart, SparklineParser.parse(compactJson));
+    }
+
+    public static void bind(LineChart chart, List<Entry> entries) {
 
         // Basic, once-only view config
-        if (chart.getData() == null) {
+        LineData data = chart.getData();
+        if (data == null) {
             chart.setTouchEnabled(false);
             chart.setDragEnabled(false);
             chart.setScaleEnabled(false);
@@ -57,43 +57,39 @@ public final class SparklineBinder {
             chart.setNoDataText("");
         }
 
-        LineDataSet set;
-        if (chart.getData() != null && chart.getData().getDataSetCount() > 0) {
-            set = (LineDataSet) chart.getData().getDataSetByIndex(0);
+        LineDataSet set = null;
+        data = chart.getData();
+        if (data != null && data.getDataSetCount() > 0) {
+            set = (LineDataSet) data.getDataSetByIndex(0);
+        }
+        if (set != null) {
             set.setValues(entries);
-            chart.getData().notifyDataChanged();
+            data.notifyDataChanged();
             chart.notifyDataSetChanged();
-        } else {
-            set = new LineDataSet(entries, "");
-            set.setDrawValues(false);
-            set.setDrawCircles(false);
-            set.setLineWidth(1.8f);
-            set.setMode(LineDataSet.Mode.CUBIC_BEZIER);
-            set.setCubicIntensity(0.2f);
-            set.setHighLightColor(0); // disable highlight line
-            set.setDrawHorizontalHighlightIndicator(false);
-            set.setDrawVerticalHighlightIndicator(false);
-
-            int accent = ContextCompat.getColor(chart.getContext(), R.color.sparkline_primary);
-            set.setColor(accent);
-
-            // Subtle gradient fill under the line
-            set.setDrawFilled(true);
-            // Create a simple vertical gradient based on base color
-            Paint p = chart.getRenderer().getPaintRender();
-            int top = (accent & 0x00FFFFFF) | 0x22000000;   // low alpha
-            int bottom = (accent & 0x00FFFFFF); // transparent
-            LinearGradient lg = new LinearGradient(0, 0, 0, chart.getHeight(),
-                    top, bottom, Shader.TileMode.CLAMP);
-            set.setFillAlpha(120);
-            set.setFillDrawable(null); // not using drawable; fallback to paint's shader
-            // MPAndroidChart uses setFillColor / setFillDrawable, but we can simply:
-            set.setFillColor(top);
-
-            LineData data = new LineData(set);
-            chart.setData(data);
+            chart.invalidate();
+            return;
         }
 
+        set = new LineDataSet(entries, "");
+        set.setDrawValues(false);
+        set.setDrawCircles(false);
+        set.setLineWidth(1.8f);
+        set.setMode(LineDataSet.Mode.CUBIC_BEZIER);
+        set.setCubicIntensity(0.2f);
+        set.setHighLightColor(0); // disable highlight line
+        set.setDrawHorizontalHighlightIndicator(false);
+        set.setDrawVerticalHighlightIndicator(false);
+
+        int accent = ContextCompat.getColor(chart.getContext(), R.color.sparkline_primary);
+        set.setColor(accent);
+
+        // Subtle fill under the line
+        set.setDrawFilled(true);
+        int top = (accent & 0x00FFFFFF) | 0x22000000;   // low alpha
+        set.setFillAlpha(120);
+        set.setFillColor(top);
+
+        chart.setData(new LineData(set));
         chart.invalidate();
     }
 }

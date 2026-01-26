@@ -14,6 +14,7 @@ import androidx.recyclerview.widget.RecyclerView;
 import com.f119589.R;
 import com.f119589.data.entity.FavouritePair;
 import com.f119589.ui.util.SparklineBinder;
+import com.f119589.ui.util.SparklineParser;
 import com.github.mikephil.charting.charts.LineChart;
 
 import java.util.ArrayList;
@@ -21,6 +22,7 @@ import java.util.List;
 import java.util.Locale;
 
 public class FavouritesAdapter extends RecyclerView.Adapter<FavouritesAdapter.VH> {
+    private static final String PAYLOAD_PRICE_ONLY = "price_only";
 
     public interface OnFavoriteClick {
         void onOpenDetails(FavouritePair e);
@@ -78,7 +80,7 @@ public class FavouritesAdapter extends RecyclerView.Adapter<FavouritesAdapter.VH
                     double change = ((price - baseline) / baseline) * 100.0;
                     e.setChange24hPercent(change);
                 }
-                notifyItemChanged(i, "price_only");
+                notifyItemChanged(i, PAYLOAD_PRICE_ONLY);
                 break;
             }
         }
@@ -95,24 +97,14 @@ public class FavouritesAdapter extends RecyclerView.Adapter<FavouritesAdapter.VH
     @Override
     public void onBindViewHolder(@NonNull VH h, int pos) {
         FavouritePair e = items.get(pos);
-        h.txtName.setText(e.getDisplayName() != null ? e.getDisplayName() : e.getSymbol());
-        h.txtSub.setText(e.getSymbol());
-        h.txtPrice.setText(e.getLastPrice() > 0 ? String.valueOf(e.getLastPrice()) : "—");
-        bindChange(h.txtChange, e.getChange24hPercent());
-        h.txtBadge.setText(buildBadge(e));
-
-        SparklineBinder.bind(h.chart, e.getOhlc24hJson());
-
-        h.btnRemove.setOnClickListener(v -> listener.onRemove(e));
-        h.itemView.setOnClickListener(v -> listener.onOpenDetails(e));
+        h.bindFull(e, listener);
     }
 
     @Override
     public void onBindViewHolder(@NonNull VH h, int pos, @NonNull List<Object> payloads) {
-        if (!payloads.isEmpty() && payloads.contains("price_only")) {
+        if (!payloads.isEmpty() && payloads.contains(PAYLOAD_PRICE_ONLY)) {
             FavouritePair e = items.get(pos);
-            h.txtPrice.setText(e.getLastPrice() > 0 ? String.valueOf(e.getLastPrice()) : "—");
-            bindChange(h.txtChange, e.getChange24hPercent());
+            h.bindPriceOnly(e);
             return; // skip full bind
         }
         super.onBindViewHolder(h, pos, payloads);
@@ -128,6 +120,7 @@ public class FavouritesAdapter extends RecyclerView.Adapter<FavouritesAdapter.VH
         private final TextView txtSub;
         private final TextView txtPrice;
         private final TextView txtChange;
+        private final TextView txtLowHigh;
         private final TextView txtBadge;
         private final LineChart chart;
         private final ImageButton btnRemove;
@@ -138,9 +131,28 @@ public class FavouritesAdapter extends RecyclerView.Adapter<FavouritesAdapter.VH
             txtSub = v.findViewById(R.id.txtSub);
             txtPrice = v.findViewById(R.id.txtPrice);
             txtChange = v.findViewById(R.id.txtChange);
+            txtLowHigh = v.findViewById(R.id.txtLowHigh);
             txtBadge = v.findViewById(R.id.txtBadge);
             chart = v.findViewById(R.id.sparkline);
             btnRemove = v.findViewById(R.id.btnRemove);
+        }
+
+        void bindFull(FavouritePair e, OnFavoriteClick listener) {
+            String name = e.getDisplayName();
+            txtName.setText(name != null ? name : e.getSymbol());
+            txtSub.setText(e.getSymbol());
+            bindPriceOnly(e);
+            txtBadge.setText(buildBadge(e));
+            SparklineParser.ParseResult parsed = SparklineParser.parseWithMinMax(e.getOhlc24hJson());
+            txtLowHigh.setText(buildLowHigh(parsed.getMinMax()));
+            SparklineBinder.bind(chart, parsed.getEntries());
+            btnRemove.setOnClickListener(v -> listener.onRemove(e));
+            itemView.setOnClickListener(v -> listener.onOpenDetails(e));
+        }
+
+        void bindPriceOnly(FavouritePair e) {
+            txtPrice.setText(e.getLastPrice() > 0 ? String.valueOf(e.getLastPrice()) : "—");
+            bindChange(txtChange, e.getChange24hPercent());
         }
     }
 
@@ -161,7 +173,7 @@ public class FavouritesAdapter extends RecyclerView.Adapter<FavouritesAdapter.VH
         if (display == null || display.isEmpty()) {
             display = pair.getSymbol();
         }
-        if (display == null || display.isEmpty()) {
+        if (display.isEmpty()) {
             return "—";
         }
         int slash = display.indexOf('/');
@@ -173,5 +185,29 @@ public class FavouritesAdapter extends RecyclerView.Adapter<FavouritesAdapter.VH
             display = display.substring(0, 4);
         }
         return display.toUpperCase(Locale.US);
+    }
+
+    private static String buildLowHigh(SparklineParser.MinMax mm) {
+        String low = formatPrice(mm.getLow());
+        String high = formatPrice(mm.getHigh());
+        return String.format(Locale.US, "24h L: %s  H: %s", low, high);
+    }
+
+    private static String formatPrice(Double v) {
+        if (v == null) return "—";
+        double abs = Math.abs(v);
+        if (abs >= 1_000_000d) {
+            return String.format(Locale.US, "%.2fM", v / 1_000_000d);
+        }
+        if (abs >= 1_000d) {
+            return String.format(Locale.US, "%.2fk", v / 1_000d);
+        }
+        if (abs >= 1d) {
+            return String.format(Locale.US, "%.2f", v);
+        }
+        if (abs >= 0.01d) {
+            return String.format(Locale.US, "%.4f", v);
+        }
+        return String.format(Locale.US, "%.6f", v);
     }
 }

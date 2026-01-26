@@ -67,6 +67,10 @@ public class KrakenWebSocketService extends Service {
     private boolean intentionalClose = false;
     private int reconnectAttempts = 0;
 
+    private interface ThrowingRunnable {
+        void run() throws Exception;
+    }
+
     @SuppressLint("ForegroundServiceType")
     @Override
     public void onCreate() {
@@ -149,16 +153,26 @@ public class KrakenWebSocketService extends Service {
         }, delayMs, TimeUnit.MILLISECONDS);
     }
 
-    private void subscribeToFavorites(WebSocket ws) {
+    private void runSafely(String label, ThrowingRunnable task) {
+        runSafely(label, null, task);
+    }
+
+    private void runSafely(String label, String payload, ThrowingRunnable task) {
         try {
+            task.run();
+        } catch (Exception ex) {
+            if (payload == null) {
+                Log.e(TAG, label + " error", ex);
+            } else {
+                Log.e(TAG, label + " error: " + payload, ex);
+            }
+        }
+    }
+
+    private void subscribeToFavorites(WebSocket ws) {
+        runSafely("subscribeToFavorites", () -> {
             List<FavouritePair> favs = AppDb.get(this).favoritePairDao().getAllSync();
-
-            Set<String> pairs = favs.stream()
-                    .filter(Objects::nonNull)
-                    .map(FavouritePair::getSymbol)
-                    .filter(symbol -> !symbol.isEmpty())
-                    .collect(Collectors.toCollection(HashSet::new));
-
+            Set<String> pairs = extractSymbols(favs);
             if (pairs.isEmpty()) {
                 Log.i(TAG, "No favorites; nothing to subscribe.");
                 return;
@@ -169,24 +183,19 @@ public class KrakenWebSocketService extends Service {
             activeSubscriptions.clear();
 
             requestSubscriptions(ws, pairs);
-        } catch (Exception ex) {
-            Log.e(TAG, "subscribeToFavorites error", ex);
-        }
+        });
     }
 
     /**
      * Call after favorites change to resubscribe.
      */
     private void refreshSubscriptions() {
-        try {
+        runSafely("refreshSubscriptions", () -> {
             if (socket == null) return;
             List<FavouritePair> favs = AppDb.get(this).favoritePairDao().getAllSync();
 
             // Determine additions/removals
-            Set<String> desired = favs.stream()
-                    .filter(Objects::nonNull)
-                    .map(FavouritePair::getSymbol)
-                    .collect(Collectors.toCollection(HashSet::new));
+            Set<String> desired = extractSymbols(favs);
 
             desiredSubscriptions.clear();
             desiredSubscriptions.addAll(desired);
@@ -208,72 +217,41 @@ public class KrakenWebSocketService extends Service {
             if (!toAdd.isEmpty()) {
                 requestSubscriptions(socket, toAdd);
             }
-        } catch (Exception ex) {
-            Log.e(TAG, "refreshSubscriptions error", ex);
-        }
+        });
     }
-
-    // ---------------------------------------------------------------------
-    // Message handling
-    // ---------------------------------------------------------------------
 
     private void handleMessage(String text) {
-        try {
-            JsonElement root = JsonParser.parseString(text);
-
-            // 1) Event objects (including subscriptionStatus & heartbeat) — log for debugging
-            if (root.isJsonObject()) {
-                var evt = root.getAsJsonObject();
-                if (evt.has("event")) {
-                    String ev = evt.get("event").getAsString();
-                    if ("subscriptionStatus".equals(ev)) {
-                        io.execute(() -> handleSubscriptionStatus(evt));
-                    } else {
-                        android.util.Log.d(TAG, "WS event: " + evt);
-                    }
-                }
-                return;
-            }
-
-            // 2) Data arrays: [ chanId, payloadObj, "ticker", "PAIR" ]
-            if (!root.isJsonArray()) return;
-            JsonArray arr = root.getAsJsonArray();
-            if (arr.size() < 2) return;
-
-            JsonElement payloadEl = arr.get(1);
-            if (!payloadEl.isJsonObject()) return;
-            var obj = payloadEl.getAsJsonObject();
-
-            // Determine the pair:
-            String wsSymbol = null;
-            if (obj.has("pair")) {
-                wsSymbol = obj.get("pair").getAsString();
-            } else if (arr.size() >= 4) {
-                // Index 2 is channel name, index 3 is pair for Kraken public feeds
-                String channelName = arr.get(2).isJsonPrimitive() ? arr.get(2).getAsString() : null;
-                if ("ticker".equals(channelName) && arr.get(3).isJsonPrimitive()) {
-                    wsSymbol = arr.get(3).getAsString();
-                }
-            }
-            if (wsSymbol == null) return; // can't route without a symbol
-
-            // Extract last trade price from "c": ["price","lot volume"]
-            if (!obj.has("c")) return;
-            JsonArray c = obj.getAsJsonArray("c");
-            if (c.isEmpty()) return;
-
-            double last = Double.parseDouble(c.get(0).getAsString());
-
-            // Update DB and post tick event to LiveData
-            CryptoRepository repo = CryptoRepository.get(getApplicationContext());
-            repo.updateLivePrice(wsSymbol, last);
-            repo.postTickEvent(wsSymbol, last);
-
-        } catch (Exception ex) {
-            android.util.Log.e(TAG, "handleMessage parse error: " + text, ex);
-        }
+        runSafely("handleMessage", text, () -> handleMessageInternal(text));
     }
 
+    private void handleMessageInternal(String text) {
+        JsonElement root = JsonParser.parseString(text);
+
+        // 1) Event objects (including subscriptionStatus & heartbeat) — log for debugging
+        JsonObject evt = asObject(root);
+        if (evt != null) {
+            handleEvent(evt);
+            return;
+        }
+
+        // 2) Data arrays: [ chanId, payloadObj, "ticker", "PAIR" ]
+        JsonArray arr = asArray(root);
+        if (arr == null || arr.size() < 2) return;
+
+        JsonObject obj = asObject(arr.get(1));
+        if (obj == null) return;
+
+        String wsSymbol = extractWsSymbol(arr, obj);
+        if (wsSymbol == null) return; // can't route without a symbol
+
+        Double last = extractLastPrice(obj);
+        if (last == null) return;
+
+        // Update DB and post tick event to LiveData
+        CryptoRepository repo = CryptoRepository.get(getApplicationContext());
+        repo.updateLivePrice(wsSymbol, last);
+        repo.postTickEvent(wsSymbol, last);
+    }
 
     // ---------------------------------------------------------------------
     // Payload builders
@@ -306,6 +284,60 @@ public class KrakenWebSocketService extends Service {
             default:
                 break;
         }
+    }
+
+    private void handleEvent(JsonObject evt) {
+        if (!evt.has("event")) return;
+        String ev = evt.get("event").getAsString();
+        if ("subscriptionStatus".equals(ev)) {
+            io.execute(() -> handleSubscriptionStatus(evt));
+            return;
+        }
+        Log.d(TAG, "WS event: " + evt);
+    }
+
+    private static Set<String> extractSymbols(List<FavouritePair> favs) {
+        if (favs == null) return Collections.emptySet();
+        return favs.stream()
+                .filter(Objects::nonNull)
+                .map(FavouritePair::getSymbol)
+                .filter(symbol -> symbol != null && !symbol.isEmpty())
+                .collect(Collectors.toCollection(HashSet::new));
+    }
+
+    @Nullable
+    private static JsonObject asObject(JsonElement el) {
+        return el != null && el.isJsonObject() ? el.getAsJsonObject() : null;
+    }
+
+    @Nullable
+    private static JsonArray asArray(JsonElement el) {
+        return el != null && el.isJsonArray() ? el.getAsJsonArray() : null;
+    }
+
+    @Nullable
+    private static String extractWsSymbol(JsonArray arr, JsonObject obj) {
+        if (obj.has("pair")) {
+            return obj.get("pair").getAsString();
+        }
+        if (arr.size() < 4) return null;
+        JsonElement channelEl = arr.get(2);
+        JsonElement pairEl = arr.get(3);
+        if (channelEl != null && channelEl.isJsonPrimitive()
+                && "ticker".equals(channelEl.getAsString())
+                && pairEl != null && pairEl.isJsonPrimitive()) {
+            return pairEl.getAsString();
+        }
+        return null;
+    }
+
+    @Nullable
+    private static Double extractLastPrice(JsonObject obj) {
+        JsonElement cEl = obj.get("c");
+        if (cEl == null || !cEl.isJsonArray()) return null;
+        JsonArray c = cEl.getAsJsonArray();
+        if (c.isEmpty() || !c.get(0).isJsonPrimitive()) return null;
+        return Double.parseDouble(c.get(0).getAsString());
     }
 
     private void requestSubscriptions(WebSocket ws, Set<String> pairs) {

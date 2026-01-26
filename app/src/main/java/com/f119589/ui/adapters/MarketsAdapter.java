@@ -100,11 +100,7 @@ public class MarketsAdapter extends RecyclerView.Adapter<MarketsAdapter.VH> {
     @Override
     public void onBindViewHolder(@NonNull VH h, int pos) {
         AssetPairDto p = filteredItems.get(pos);
-        h.txtName.setText(p.display());
-        h.txtSub.setText(p.wsName());
-        h.txtBadge.setText(buildBadge(p.display()));
-        h.btnAdd.setOnClickListener(v -> listener.onAddToFavorites(p));
-        h.itemView.setOnClickListener(v -> listener.onOpenDetails(p));
+        h.bind(p, listener);
     }
 
     @Override
@@ -124,6 +120,14 @@ public class MarketsAdapter extends RecyclerView.Adapter<MarketsAdapter.VH> {
             txtSub = v.findViewById(R.id.txtSub);
             txtBadge = v.findViewById(R.id.txtBadge);
             btnAdd = v.findViewById(R.id.btnAdd);
+        }
+
+        void bind(AssetPairDto p, OnMarketClick listener) {
+            txtName.setText(p.display());
+            txtSub.setText(p.wsName());
+            txtBadge.setText(buildBadge(p.display()));
+            btnAdd.setOnClickListener(v -> listener.onAddToFavorites(p));
+            itemView.setOnClickListener(v -> listener.onOpenDetails(p));
         }
     }
 

@@ -9,6 +9,7 @@ import android.widget.TextView;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.widget.SearchView;
+import androidx.core.content.ContextCompat;
 import androidx.fragment.app.Fragment;
 import androidx.recyclerview.widget.DividerItemDecoration;
 import androidx.recyclerview.widget.LinearLayoutManager;
@@ -54,6 +55,23 @@ public class MarketsFragment extends Fragment implements MarketsAdapter.OnMarket
         renderSnapshot(null);
 
         SearchView searchView = v.findViewById(R.id.searchMarkets);
+        searchView.setIconifiedByDefault(false);
+        searchView.setIconified(false);
+        SearchView.SearchAutoComplete searchText = searchView.findViewById(androidx.appcompat.R.id.search_src_text);
+        if (searchText != null) {
+            int textColor = ContextCompat.getColor(requireContext(), R.color.text_primary);
+            int hintColor = ContextCompat.getColor(requireContext(), R.color.text_secondary);
+            searchText.setTextColor(textColor);
+            searchText.setHintTextColor(hintColor);
+            searchText.setFocusable(true);
+            searchText.setFocusableInTouchMode(true);
+        }
+        searchView.setOnClickListener(v1 -> {
+            SearchView.SearchAutoComplete input = searchView.findViewById(androidx.appcompat.R.id.search_src_text);
+            if (input != null) {
+                input.requestFocus();
+            }
+        });
         searchView.setOnQueryTextListener(new SearchView.OnQueryTextListener() {
             @Override
             public boolean onQueryTextSubmit(String query) {
